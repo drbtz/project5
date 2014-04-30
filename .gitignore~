@@ -24,3 +24,8 @@
 
 .metadata/
 debug/
+
+mfscat
+mfsput
+example.img
+bare.img

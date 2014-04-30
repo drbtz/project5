@@ -23,9 +23,11 @@
 *.hex
 
 .metadata/
-debug/
+Debug/
 
 mfscat
 mfsput
 example.img
 bare.img
+.cproject
+.project
