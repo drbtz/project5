@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include "udp.h"
+#include "mfs.h"
 
 #define BUFFER_SIZE (4096)
 char buffer[BUFFER_SIZE];

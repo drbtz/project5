@@ -1,0 +1,11 @@
+MFS
+  MFS_Init
+    Connect to the server using the port and hostname
+    Send a signal to the server
+    Wait for a signal back
+    Return 0
+  MFS_Lookup
+    Send a LOOKUP signal to the server
+    Send the parent inode numer and the name
+    Wait for server to send result and return it
+    
