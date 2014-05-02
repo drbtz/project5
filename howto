@@ -1,0 +1,190 @@
+MFS
+  MFS_Init(hostname, port)
+    Connect to the server using the port and hostname
+    Send a signal to the server
+    Wait for a signal back
+    Return 0
+    
+  MFS_Lookup(pinum, name)
+    Check the name
+      If the name is too long, return -1
+    Create a package
+    Put pinum, name into the package
+    Put request type into the package
+    Send the package to the server
+    Wait for a package from the server(5 second timeout)
+    Unpack the package
+    Return the result
+    
+  MFS_Stat(inum, m)
+    Create a package
+    Put inum into the package
+    Put request type into the package
+    Send package to the server
+    Wait for a package from the server(5 second timeout)
+    Unpack the package
+    Check result of the package
+      If fail, return fail
+    Unload MFS_Stat_t from package into m
+    Return result
+    
+    
+  MFS_Write(inum, buffer, block)
+    Create a package
+    Put inum, buffer, block into package
+    Put request type into the package
+    Send package to the server
+    Wait for a package from the server(5 second timeout)
+    Unpack the package
+    Return result
+    
+  MFS_Read(inum, buffer, block)
+    Create a package
+    Put inum and block into the package
+    Put request type into the package
+    Send package to the server
+    Wait for a package from the server(5 second timeout)
+    Unpack the package
+    Check the result of the package
+      If fail, return fail
+    Unload read data from the package into buffer
+    Return result
+    
+  MFS_Creat(pinum, type, name)
+    Check the name
+      If the name is too long, return -1
+    Create a package
+    Put pinum, type and name into package
+    Put request type into package
+    Send package to the server
+    Wait for a package from the server(5 second timeout)
+    Unpack the package
+    Return result
+    
+  MFS_Unlink(pinum, name)
+    Check the name
+      If the name is too long, return 0 (sucess, according to the spec)
+    Create package
+    Put pinum and name into package
+    Put request type into package
+    Send package to the server
+    Wait for a package from the server(5 second timeout)
+    Unpack the package
+    Return result
+    
+--------------------------------------------------------------------------------    
+
+Server
+  Initialize file Image
+    Try to open file
+    If file doesnt exist, create a new one
+    Set up file
+      Create checkpoint Region
+      Set up a root directory
+  Wait for a request
+    Lookup
+      Find parent inode
+      Look through Directory data based on name
+      If the name was found, return the inode number
+      If the name was not found, return -1
+    Stat
+      Find the inode
+      Return information about inode(type and size)
+    Write
+      If the inode is out of range(0-4095), return -1
+      If the block is out of range(0-13), return -1
+      Find the inode
+      Check if the inode is valid
+        If the inode is a directory, return -1
+        If the inode is set to 0, return -1
+      Wait for the data from mfs.c
+      Write the data to the block
+        Write the data to the image
+        Update inode block info
+        Update Map Piece inode info
+        Update Checkpoint Region Map Piece info
+        return 0        
+    Read
+      If the inode is out of range(0-4095), return -1
+      If the block is out of range(0-13), return -1
+      Find the inode
+      If the inode is set to 0, return -1
+        If the inode is a directory
+          Return name and inode # of the directory (MFS_DirEnt_t)
+        If the inode is a file
+          If the block is set to 0, return -1
+          Return the data stored in the block
+    Creat
+      If parent inode is out of range(0-4095), return -1
+      If parent indoe is set to 0, return -1
+      If name is too long, return -1
+      Find the parent inode
+        If parent inode is a file, return -1
+        If the name already exists, return 0
+        Create the file
+          If it is a directory
+            Create directory, return 0
+          If it is a file
+            Create file, return 0
+              Find a free inode
+              Set the blocks to valid 
+    Unlink
+      If parent inode is out of range(0-4095), return -1
+      If parent indoe is set to 0, return -1
+      Find the parent inode
+        Check the directory for the name
+          If the name is in the directory
+            Check the inode of the name
+              If the inode is a directory, check if it is empty
+                If it is not empty, return -1
+                Else, set the inode to 0, return 0
+          If the name is not in the directory, return 0
+          If the name is a file, set the inode to 0, return 0 
+
+--------------------------------------------------------------------------------
+
+NOTES from office hours
+
+Offsets: a 32 bit (4 byte int)  An abosolute value from the start of the disk.  Saved with the Inode/Imap/CR. No "pointers".  The values stored are an absolute int value   
+Corresponds to the exact location determined by the 0th "address" on the disk
+a "pointer" in iNode/map is just an offest value (size of int)
+
+iNode contents: size, type(file or dir), 14 "pointers"(int offsets)
+iMap contents: ID 0-255, 16 pointers to iNodes
+4096 iNodes = 256 iMap pieces
+
+disk initialized to just CR.
+existing disk image: read CR, iMap into memory, proceed as normal
+an existing disk image (TA example provided to us) will have CR and iMaps + any existing data and iNodes.
+
+Most code goes in server.c, client.c only used for testing purposes
+
+packaging UDP:  make a generic struct that contains all possible needed sub-structures(buffer and an int which corresponds to the operation desired by client (MFS_read, write, lookup etc. 8 possible)
+Send entire struct "package" to server.
+Server copies whole struct, reads operation ID, calls coresponding routine using data in the package
+
+4k file updated to 8k
+inital 4K write
+CR | D0 | I | M| EOF
+8K update:
+CR | D0 | I invalid | M invalid | D1 | I | M | EOF
+4K update:
+CR | D0 invalid | I invalid | M invalid | D0 | I | M | EOF
+
+NEVER overwrite any data/node/map.  Just update offsets to correspond to new data(hence marking unused block invalid, which would be garbage collected)
+
+files only ever written/read in 4k block. we will never have a 2K file or anything less than exactly 4k worth of data (no need to mark parts of block as invalid. whole block is valid or invalid)
+
+.so files are dynamic libraries.  Similar to having a seperate .c files that you call via your (alternately compiled) program. not included in 
+
+Process for building and testing.
+-get server.c to open an existing disk image and read in CR/iMap.
+-get client to read a file from this existing image.  
+-build a print function that will "dump" contents of disk (is this mfscat?)  
+-build and test all server side functions
+-build a generic package to handle all UDP transactions.
+-build and test proper packaging and transmission of MFS_client_library
+
+
+
+
