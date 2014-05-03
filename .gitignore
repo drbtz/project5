@@ -31,3 +31,5 @@ example.img
 bare.img
 .cproject
 .project
+*~
+.*~

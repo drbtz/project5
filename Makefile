@@ -1,21 +1,12 @@
-CC   = gcc
-OPTS = -Wall
-
-all: server client
-
-# this generates the target executables
-server: server.o udp.o
-	$(CC) -o server server.o udp.o 
-
-client: client.o udp.o
-	$(CC) -o client client.o udp.o 
-
-# this is a generic rule for .o files 
-%.o: %.c 
-	$(CC) $(OPTS) -c $< -o $@
+all:
+	gcc -c -fpic mfs.c -Wall -Werror -o mfs.o
+	gcc -Wall -c -fpic udp.c -o udp.o
+	gcc -shared -o libmfs.so mfs.o udp.o
+	gcc -Wall -c server.c -o server.o
+	gcc -o server server.o udp.o 	
+	gcc -Wall -c client.c -o client.o
+	gcc -lmfs -L. -o client client.c -Wall -Werror
+	export LD_LIBRARY_PATH=.
 
 clean:
-	rm -f server.o udp.o client.o server client
-
-
-
+	rm -f server.o udp.o client.o mfs.o libmfs.so server client

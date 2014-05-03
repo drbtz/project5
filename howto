@@ -1,8 +1,8 @@
 MFS
   MFS_Init(hostname, port)
     Connect to the server using the port and hostname
-    Send a signal to the server
-    Wait for a signal back
+    Send a package to the server
+    Wait for a package back
     Return 0
     
   MFS_Lookup(pinum, name)
@@ -69,6 +69,14 @@ MFS
     Put request type into package
     Send package to the server
     Wait for a package from the server(5 second timeout)
+    Unpack the package
+    Return result
+    
+  MFS_Shutdown
+  	Create a package
+  	Put request type into package
+  	Send Package
+  	Wait for a package from the server(5 second timeout)
     Unpack the package
     Return result
     

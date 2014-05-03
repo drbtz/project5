@@ -1,4 +1,11 @@
 #include "mfs.h"
+#include "udp.h"
+#define BUFFER_SIZE (4096)
+
+struct sockaddr_in raddr;
+struct sockaddr_in saddr;
+int sd;
+char buffer[BUFFER_SIZE];
 
 /*
  * MFS_Init() takes a host name and port number and uses those to find the
@@ -6,6 +13,16 @@
  */
 int MFS_Init(char *hostname, int port)
 {
+	int sd = UDP_Open(0);
+	assert(sd > -1);
+	int rc = UDP_FillSockAddr(&saddr, hostname, port);
+	if(rc < 0)
+	{
+		perror("Socket fill");
+		return -1;
+	}
+
+
 	return 0;
 }
 
@@ -17,6 +34,26 @@ int MFS_Init(char *hostname, int port)
  */
 int MFS_Lookup(int pinum, char *name)
 {
+	//Check the name
+	int nameLength = strlen(name);
+	if(nameLength > 60)
+	{
+		printf("Lookup: name too long");
+		return -1;
+	}
+	//Create package
+	Package_t lookupPackage;
+	//Fill package
+	lookupPackage.pinum = pinum;
+	strcpy(lookupPackage.name, name);
+	lookupPackage.requestType = LOOKUP_REQUEST;
+	//Send the package to the server
+
+	//Wait for a response from the server(5 second timeout)
+
+	//Unpack the package
+
+	//return the result
 	return 0;
 }
 
@@ -37,6 +74,14 @@ int MFS_Stat(int inum, MFS_Stat_t *m)
  */
 int MFS_Write(int inum, char *buffer, int block)
 {
+	int rc = UDP_Write(sd, &saddr, buffer, BUFFER_SIZE);
+	if (rc <= 0) return -1;
+	// printf("CLIENT:: sent message (%d)\n", rc);
+	if (rc > 0) {
+		int rc = UDP_Read(sd, &raddr, buffer, BUFFER_SIZE);
+		printf("CLIENT:: read %d bytes (message: '%s')\n", rc, buffer);
+	}
+
 	return 0;
 }
 

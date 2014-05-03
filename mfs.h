@@ -17,17 +17,34 @@ typedef struct __MFS_DirEnt_t {
     int  inum;      // inode number of entry (-1 means entry not used)
 } MFS_DirEnt_t;
 
+
+//Package structure that is passed between the shared library and the server
 typedef struct __Package_t {
-	int 		requestType;	//Request being sent to server(read, write, etc)
-	int 		pinum;			//The parent inode number
-	int 		inum;			//The inode number
-	MFS_Stat_t 	m;				//Used by MFS_Stat for formatting
-	char 		name[60];		//The file name
-	int 		block;			//The block of the inode
-	char 		buffer[4096];	//buffer for read request from client
-	int 		type;			//The type of the inode(file or directory)
-	int			result;			//The result of the request sent to server
+	int 		requestType;			//Request being sent to server(read, write, etc)
+	int 		pinum;					//The parent inode number
+	int 		inum;					//The inode number
+	MFS_Stat_t 	m;						//Used by MFS_Stat for formatting
+	char 		name[60];				//The file name
+	int 		block;					//The block of the inode
+	char 		buffer[MFS_BLOCK_SIZE];	//buffer for read request from client
+	int 		type;					//The type of the inode(file or directory)
+	int			result;					//The result of the request sent to server
 } Package_t;
+
+//Package constants to be used by the shared library and the server
+//(For consistency)
+#define LOOKUP_REQUEST		(0)
+#define STAT_REQUEST		(1)
+#define WRITE_REQUEST		(2)
+#define READ_REQUEST		(3)
+#define CREAT_REQUEST		(4)
+#define UNLINK_REQUEST		(5)
+#define SHUTDOWN_REQUEST	(6)
+
+
+struct 	sockaddr_in raddr;
+struct 	sockaddr_in saddr;
+int 	sd;
 
 
 int MFS_Init(char *hostname, int port);
