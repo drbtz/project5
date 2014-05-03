@@ -33,3 +33,5 @@ bare.img
 .project
 *~
 .*~
+server
+client

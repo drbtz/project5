@@ -2,9 +2,13 @@
 #include "udp.h"
 #define BUFFER_SIZE (4096)
 
-struct sockaddr_in raddr;
-struct sockaddr_in saddr;
-int sd;
+//struct sockaddr_in raddr;
+//struct sockaddr_in saddr;
+//int sd;
+
+fd_set sockets;
+struct timeval timeout;
+
 char buffer[BUFFER_SIZE];
 
 /*
@@ -21,6 +25,14 @@ int MFS_Init(char *hostname, int port)
 		perror("Socket fill");
 		return -1;
 	}
+
+	//set up the fd_set for select
+	FD_ZERO(&sockets);
+	FD_SET(sd, &sockets);
+
+	//set up timeval for select
+	timeout.tv_sec = 5;
+	timeout.tv_usec = 0;
 
 
 	return 0;

@@ -41,11 +41,12 @@ typedef struct __Package_t {
 #define UNLINK_REQUEST		(5)
 #define SHUTDOWN_REQUEST	(6)
 
-
+//communication stuff
 struct 	sockaddr_in raddr;
 struct 	sockaddr_in saddr;
 int 	sd;
-
+//fd_set sockets;
+//struct timeval timeout;
 
 int MFS_Init(char *hostname, int port);
 int MFS_Lookup(int pinum, char *name);
