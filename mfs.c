@@ -2,14 +2,12 @@
 #include "udp.h"
 #define BUFFER_SIZE (4096)
 
-//struct sockaddr_in raddr;
-//struct sockaddr_in saddr;
-//int sd;
+struct sockaddr_in raddr;
+struct sockaddr_in saddr;
+int sd;
 
 fd_set sockets;
 struct timeval timeout;
-
-char buffer[BUFFER_SIZE];
 
 /*
  * MFS_Init() takes a host name and port number and uses those to find the
@@ -17,7 +15,7 @@ char buffer[BUFFER_SIZE];
  */
 int MFS_Init(char *hostname, int port)
 {
-	int sd = UDP_Open(0);
+	sd = UDP_Open(0);
 	assert(sd > -1);
 	int rc = UDP_FillSockAddr(&saddr, hostname, port);
 	if(rc < 0)
@@ -27,8 +25,8 @@ int MFS_Init(char *hostname, int port)
 	}
 
 	//set up the fd_set for select
-	FD_ZERO(&sockets);
-	FD_SET(sd, &sockets);
+	//FD_ZERO(&sockets);
+	//FD_SET(sd, &sockets);
 
 	//set up timeval for select
 	timeout.tv_sec = 5;
@@ -86,12 +84,14 @@ int MFS_Stat(int inum, MFS_Stat_t *m)
  */
 int MFS_Write(int inum, char *buffer, int block)
 {
-	int rc = UDP_Write(sd, &saddr, buffer, BUFFER_SIZE);
+	Package_t bufferP;
+	strcpy(bufferP.name, buffer);
+	int rc = UDP_Write(sd, &saddr, &bufferP, BUFFER_SIZE);
 	if (rc <= 0) return -1;
 	// printf("CLIENT:: sent message (%d)\n", rc);
 	if (rc > 0) {
-		int rc = UDP_Read(sd, &raddr, buffer, BUFFER_SIZE);
-		printf("CLIENT:: read %d bytes (message: '%s')\n", rc, buffer);
+		int rc = UDP_Read(sd, &raddr, &bufferP, BUFFER_SIZE);
+		printf("CLIENT:: read %d bytes (message: '%s')\n", rc, bufferP.name);
 	}
 
 	return 0;

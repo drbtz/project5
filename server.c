@@ -7,24 +7,24 @@
 int
 main(int argc, char *argv[])
 {
-	int sd = UDP_Open(11614);
-	assert(sd > -1);
+    int sd = UDP_Open(11614);
+    assert(sd > -1);
 
-	printf("                                SERVER:: waiting in loop\n");
+    printf("                                SERVER:: waiting in loop\n");
 
-	while (1) {
-		struct sockaddr_in s;
-		char buffer[BUFFER_SIZE];
-		int rc = UDP_Read(sd, &s, buffer, BUFFER_SIZE);
-		if (rc > 0) {
-			printf("                                SERVER:: read %d bytes (message: '%s')\n", rc, buffer);
-			char reply[BUFFER_SIZE];
-			sprintf(reply, "reply");
-			rc = UDP_Write(sd, &s, reply, BUFFER_SIZE);
-		}
+    while (1) {
+	struct sockaddr_in s;
+	Package_t buffer;
+	int rc = UDP_Read(sd, &s, &buffer, BUFFER_SIZE);
+	if (rc > 0) {
+	    printf("                                SERVER:: read %d bytes (message: '%s')\n", rc, buffer.name);
+	    Package_t reply;
+	    strcpy(reply.name, "Reply");
+	    rc = UDP_Write(sd, &s, &reply, BUFFER_SIZE);
 	}
+    }
 
-	return 0;
+    return 0;
 }
 
 

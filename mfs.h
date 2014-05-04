@@ -17,7 +17,6 @@ typedef struct __MFS_DirEnt_t {
     int  inum;      // inode number of entry (-1 means entry not used)
 } MFS_DirEnt_t;
 
-
 //Package structure that is passed between the shared library and the server
 typedef struct __Package_t {
 	int 		requestType;			//Request being sent to server(read, write, etc)
@@ -42,9 +41,9 @@ typedef struct __Package_t {
 #define SHUTDOWN_REQUEST	(6)
 
 //communication stuff
-struct 	sockaddr_in raddr;
-struct 	sockaddr_in saddr;
-int 	sd;
+//struct 	sockaddr_in raddr;
+//struct 	sockaddr_in saddr;
+//int 	sd;
 //fd_set sockets;
 //struct timeval timeout;
 
