@@ -119,7 +119,7 @@ int MFS_Write(int inum, char *buffer, int block)
 {
 	//create package and fill it with data(buffer, inum, block, request type)
 	Package_t writePackage;
-	strncpy(writePackage.buffer, buffer, BUFFER_SIZE);
+	strncpy(writePackage.buffer, buffer, MFS_BLOCK_SIZE);
 	writePackage.inum = 1;
 	writePackage.block = block;
 	writePackage.requestType = WRITE_REQUEST;
