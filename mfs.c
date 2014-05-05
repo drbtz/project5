@@ -45,12 +45,12 @@ int MFS_Init(char *hostname, int port)
 int MFS_Lookup(int pinum, char *name)
 {
 	//Check the name?
-	//	int nameLength = strlen(name);
-	//	if(nameLength > 60)
-	//	{
-	//		printf("Lookup: name too long");
-	//		return -1;
-	//	}
+	int nameLength = strlen(name);
+	if(nameLength > 60)
+	{//too long, can't be in the server
+		//printf("Lookup: name too long");
+		return -1;
+	}
 
 	//Create package
 	Package_t lookupPackage;
@@ -61,13 +61,13 @@ int MFS_Lookup(int pinum, char *name)
 	lookupPackage.result = 31337;
 
 	//Send the package to the server
-	int rc = UDP_Write(sd, &saddr, &lookupPackage, BUFFER_SIZE);
+	int rc = UDP_Write(sd, &saddr, &lookupPackage, sizeof(Package_t));
 	if (rc <= 0) return -1;
 
 
 	//Wait for a response from the server(5 second timeout)
 	if (select(FD_SETSIZE, &sockets, NULL, NULL, &timeout)) {
-		int rc = UDP_Read(sd, &raddr, &lookupPackage, BUFFER_SIZE);
+		int rc = UDP_Read(sd, &raddr, &lookupPackage, sizeof(Package_t));
 		printf("CLIENT:: read %d bytes (message: '%s')\n", rc, lookupPackage.name);
 	}
 
@@ -89,13 +89,13 @@ int MFS_Stat(int inum, MFS_Stat_t *m)
 	statPackage.result = 31337;
 
 	//send package to the server
-	int rc = UDP_Write(sd, &saddr, &statPackage, BUFFER_SIZE);
+	int rc = UDP_Write(sd, &saddr, &statPackage, sizeof(Package_t));
 	if (rc <= 0) return -1;
 
 
 	//Wait for a response from the server(5 second timeout)
 	if (select(FD_SETSIZE, &sockets, NULL, NULL, &timeout)) {
-		int rc = UDP_Read(sd, &raddr, &statPackage, BUFFER_SIZE);
+		int rc = UDP_Read(sd, &raddr, &statPackage, sizeof(Package_t));
 		printf("CLIENT:: read %d bytes (message: '%s')\n", rc, statPackage.name);
 	}
 
@@ -119,19 +119,19 @@ int MFS_Write(int inum, char *buffer, int block)
 {
 	//create package and fill it with data(buffer, inum, block, request type)
 	Package_t writePackage;
-	strncpy(writePackage.buffer, buffer, BUFFER_SIZE);
+	strncpy(writePackage.buffer, buffer, MFS_BLOCK_SIZE);
 	writePackage.inum = 1;
 	writePackage.block = block;
 	writePackage.requestType = WRITE_REQUEST;
 	writePackage.result = 31337;
 
 	//Send package to the server
-	int rc = UDP_Write(sd, &saddr, &writePackage, BUFFER_SIZE);
+	int rc = UDP_Write(sd, &saddr, &writePackage, sizeof(Package_t));
 	if (rc <= 0) return -1;
 
 	//Wait for a package from the server(5 second timeout)
 	if (select(FD_SETSIZE, &sockets, NULL, NULL, &timeout)) {
-		int rc = UDP_Read(sd, &raddr, &writePackage, BUFFER_SIZE);
+		int rc = UDP_Read(sd, &raddr, &writePackage, sizeof(Package_t));
 		printf("CLIENT:: read %d bytes (message: '%s')\n", rc, writePackage.buffer);
 	}
 
@@ -154,12 +154,12 @@ int MFS_Read(int inum, char *buffer, int block)
 	readPackage.result = 31337;
 
 	//send package to the server
-	int rc = UDP_Write(sd, &saddr, &readPackage, BUFFER_SIZE);
+	int rc = UDP_Write(sd, &saddr, &readPackage, sizeof(Package_t));
 	if (rc <= 0) return -1;
 
 	//Wait for a package from the server(5 second timeout)
 	if (select(FD_SETSIZE, &sockets, NULL, NULL, &timeout)) {
-		int rc = UDP_Read(sd, &raddr, &readPackage, BUFFER_SIZE);
+		int rc = UDP_Read(sd, &raddr, &readPackage, sizeof(Package_t));
 		printf("CLIENT:: read %d bytes (message: '%s')\n", rc, readPackage.buffer);
 	}
 
@@ -170,7 +170,8 @@ int MFS_Read(int inum, char *buffer, int block)
 	}
 
 	//Unload read data from server into buffer
-	*buffer = readPackage.buffer;
+	strcpy(buffer, readPackage.buffer);
+	//*buffer = readPackage.buffer;
 	return readPackage.result;
 }
 
@@ -183,7 +184,33 @@ int MFS_Read(int inum, char *buffer, int block)
  */
 int MFS_Creat(int pinum, int type, char *name)
 {
-	return 0;
+	//check the name
+	int nameLength = strlen(name);
+	if(nameLength > 60)
+	{//too long
+		return -1;
+	}
+
+	//creat a package and fill it
+	Package_t creatPackage;
+	creatPackage.pinum = pinum;
+	creatPackage.type = type;
+	strncpy(creatPackage.name, name, 60);
+	creatPackage.requestType = CREAT_REQUEST;
+	creatPackage.result = 31337;
+
+	//send package to the server
+	int rc = UDP_Write(sd, &saddr, &creatPackage, sizeof(Package_t));
+	if (rc <= 0) return -1;
+
+	//Wait for a package from the server(5 second timeout)
+	if (select(FD_SETSIZE, &sockets, NULL, NULL, &timeout)) {
+		int rc = UDP_Read(sd, &raddr, &creatPackage, sizeof(Package_t));
+		printf("CLIENT:: read %d bytes (message: '%s')\n", rc, creatPackage.buffer);
+	}
+
+
+	return creatPackage.result;
 }
 
 /*
@@ -194,7 +221,31 @@ int MFS_Creat(int pinum, int type, char *name)
  */
 int MFS_Unlink(int pinum, char *name)
 {
-	return 0;
+	//check the name
+	int nameLength = strlen(name);
+	if(nameLength > 60)
+	{//too long, return success
+		return 0;
+	}
+
+	//Create package and fill it
+	Package_t unlinkPackage;
+	unlinkPackage.pinum = pinum;
+	strncpy(unlinkPackage.name, name, 60);
+	unlinkPackage.requestType = UNLINK_REQUEST;
+	unlinkPackage.result = 31337;
+
+	//send package to the server
+	int rc = UDP_Write(sd, &saddr, &unlinkPackage, sizeof(Package_t));
+	if (rc <= 0) return -1;
+
+	//Wait for a package from the server(5 second timeout)
+	if (select(FD_SETSIZE, &sockets, NULL, NULL, &timeout)) {
+		int rc = UDP_Read(sd, &raddr, &unlinkPackage, sizeof(Package_t));
+		printf("CLIENT:: read %d bytes (message: '%s')\n", rc, unlinkPackage.buffer);
+	}
+
+	return unlinkPackage.result;
 }
 
 /*
@@ -204,5 +255,20 @@ int MFS_Unlink(int pinum, char *name)
  */
 int MFS_Shutdown()
 {
-	return 0;
+	//create package
+	Package_t shutdownPackage;
+	shutdownPackage.requestType = SHUTDOWN_REQUEST;
+	shutdownPackage.result = 31337;
+
+	//send package to the server
+		int rc = UDP_Write(sd, &saddr, &shutdownPackage, sizeof(Package_t));
+		if (rc <= 0) return -1;
+
+		//Wait for a package from the server(5 second timeout)
+		if (select(FD_SETSIZE, &sockets, NULL, NULL, &timeout)) {
+			int rc = UDP_Read(sd, &raddr, &shutdownPackage, sizeof(Package_t));
+			printf("CLIENT:: read %d bytes (message: '%s')\n", rc, shutdownPackage.buffer);
+		}
+
+		return shutdownPackage.result;
 }
