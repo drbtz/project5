@@ -32,7 +32,7 @@ struct iNode
 	//int offset; //offset of this iNode (may help in testing)
 
 };
-struct dBlock//block of directory entries
+struct dirBlock//block of directory entries
 {
 	MFS_Stat_t stats;
 	MFS_DirEnt_t entries[64];
@@ -52,15 +52,12 @@ int server_init(char *image)
 
 		//setup checkpoint region**************************************
 		//first update log end pointer
-		CR.EOL = sizeof(CR) + sizeof(struct iMap) + sizeof(struct iNode);
+		CR.EOL = sizeof(struct checkRegion) + sizeof(struct iMap) + sizeof(struct iNode) + MFS_BLOCK_SIZE;
 
 		//CR initialized by default, but create map and node and initialize them all to "null"
 		struct iMap map1;
 		struct iNode node1;
-		struct dBlock dBlock1;
-
-		node1.stats.type = 0;//set type to directory entry
-		node1.stats.size = 4096; // set size to default block size
+		struct dirBlock dirBlock1;
 
 		//"Unused entries in the inode map and unused direct pointers
 		//in the inodes should have the value 0."
@@ -80,24 +77,49 @@ int server_init(char *image)
 		}
 		for(i=0; i<64; i++)//initialize directory block
 		{
-			dBlock1.entries[i].inum = -1;
+			dirBlock1.entries[i].inum = -1;
 		}
 
 		//Setup empty root directory
-		dBlock1.entries[0].inum = 0;
+		node1.stats.type = MFS_DIRECTORY;//set type to directory entry
+		node1.stats.size = MFS_BLOCK_SIZE ; // set size to default block size
 
-		dBlock1.entries[0].name[0] = ".";
+		dirBlock1.entries[0].inum = 0;
+		dirBlock1.entries[1].inum = 0;
+		dirBlock1.stats.size = MFS_BLOCK_SIZE;
+		char nameIn[60];
+		strcpy(nameIn, ".");
+		strcpy(dirBlock1.entries[0].name, nameIn);
+		strcpy(nameIn, "..");
+		strcpy(dirBlock1.entries[1].name, nameIn);
 
 		//set all pointers properly
+		CR.maps[0] = sizeof(struct checkRegion) + MFS_BLOCK_SIZE + sizeof(struct iNode);
+		map1.nodes[0] = sizeof(struct checkRegion) + MFS_BLOCK_SIZE;
+		node1.blocks[0] = sizeof(struct checkRegion);
+
 
 		//write file image
+		pwrite(imageFD, &CR, sizeof(struct checkRegion), 0);
+		pwrite(imageFD, &dirBlock1, MFS_BLOCK_SIZE,sizeof(struct checkRegion));
+		pwrite(imageFD, &node1, sizeof(struct iNode), sizeof(struct checkRegion) + MFS_BLOCK_SIZE);
+		pwrite(imageFD, &map1, sizeof(struct iMap), sizeof(struct checkRegion) + MFS_BLOCK_SIZE + sizeof(struct iNode));
 
+		fsync(imageFD);
 	}
 	else //image exists, read in CR to memory
 	{
+		pread(imageFD, &CR.EOL, sizeof(int), 0);
+		int i;
+		for(i=0; i<255; i++)
+		{
 
+			pread(imageFD, &CR.maps[i], sizeof(int), i+1 * sizeof(int));
+		}
+		printf("pants");
 	}
 
+	close(imageFD);
 	return 0;
 }
 
