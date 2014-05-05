@@ -105,6 +105,7 @@ int
 main(int argc, char *argv[])
 {
 
+
 	//check for errors  prompt> server [portnum] [file-system-image]
 	if(argc != 3)
 	{
@@ -114,6 +115,9 @@ main(int argc, char *argv[])
 	//open port
 	int port = atoi(argv[1]);
     int sd = UDP_Open(port);
+
+
+
     assert(sd > -1);
 
     char *imageIn = (char*)argv[2];
@@ -124,13 +128,13 @@ main(int argc, char *argv[])
 
     while (1) {
 	struct sockaddr_in s;
-	char buffer[BUFFER_SIZE];
-	int rc = UDP_Read(sd, &s, buffer, BUFFER_SIZE);
+	Package_t buffer;
+	int rc = UDP_Read(sd, &s, &buffer, BUFFER_SIZE);
 	if (rc > 0) {
-	    printf("                                SERVER:: read %d bytes (message: '%s')\n", rc, buffer);
-	    char reply[BUFFER_SIZE];
-	    sprintf(reply, "reply");
-	    rc = UDP_Write(sd, &s, reply, BUFFER_SIZE);
+	    printf("                                SERVER:: read %d bytes (message: '%s')\n", rc, buffer.name);
+	    //Package_t reply;
+	    strcpy(buffer.name, "Reply");
+	    rc = UDP_Write(sd, &s, &buffer, BUFFER_SIZE);
 	}
     }
 
