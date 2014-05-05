@@ -18,9 +18,9 @@ main(int argc, char *argv[])
 	int rc = UDP_Read(sd, &s, &buffer, BUFFER_SIZE);
 	if (rc > 0) {
 	    printf("                                SERVER:: read %d bytes (message: '%s')\n", rc, buffer.name);
-	    Package_t reply;
-	    strcpy(reply.name, "Reply");
-	    rc = UDP_Write(sd, &s, &reply, BUFFER_SIZE);
+	    //Package_t reply;
+	    strcpy(buffer.name, "Reply");
+	    rc = UDP_Write(sd, &s, &buffer, BUFFER_SIZE);
 	}
     }
 

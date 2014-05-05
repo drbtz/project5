@@ -7,14 +7,14 @@ char buffer[BUFFER_SIZE];
 int
 main(int argc, char *argv[])
 {
-    int rc = MFS_Init("mumble-20.cs.wisc.edu", 11614);
+    int rc = MFS_Init("mumble-04.cs.wisc.edu", 11614);
 
     printf("CLIENT:: about to send message (%d)\n", rc);
     char message[BUFFER_SIZE];
-    sprintf(message, "hello world");
+    sprintf(message, "Hello World");
     //rc = UDP_Write(sd, &saddr, message, BUFFER_SIZE);
     // printf("CLIENT:: sent message (%d)\n", rc);
-    rc = MFS_Write(1, message, 1);
+    rc = MFS_Lookup(1, message);
     //if (rc == 0) {
 	//struct sockaddr_in raddr;
 	//int rc = UDP_Read(sd, &raddr, buffer, BUFFER_SIZE);
