@@ -16,17 +16,6 @@ iNode contents: size, type(file or dir), 14 "pointers"(int offsets)
 iMap contents: ID 0-255, 16 pointers to iNodes
 4096 iNodes = 256 iMap pieces
  */
-struct checkRegion //contains up to 256 pointers to iMap pieces
-{
-	int EOL; //end of log pointer
-	int maps[256]; //offset locations of iMaps
-
-} CR;
-struct iMap //contains up to 16 pointers to iNodes
-{
-	int nodes[16];//offset locations of iNodes
-	//int offset; //offset of this iMap (may help in testing)
-};
 struct iNode
 {
 	//size of file, miltiple of 4096 for directories. for files, offset of last non-zero byte
@@ -35,8 +24,22 @@ struct iNode
 	//int size;
 	int blocks[14];
 	//int offset; //offset of this iNode (may help in testing)
-
 };
+struct iMap //contains up to 16 pointers to iNodes
+{
+	int nodes[16];//offset locations of iNodes
+	struct iNode memNodes[16];
+	//int offset; //offset of this iMap (may help in testing)
+};
+struct checkRegion //contains up to 256 pointers to iMap pieces
+{
+	int EOL; //end of log pointer
+	int maps[256]; //offset locations of iMaps
+	struct iMap memMaps[256];
+
+} CR;
+
+
 struct dirBlock//block of directory entries
 {
 	MFS_DirEnt_t entries[64];
@@ -81,11 +84,7 @@ int server_init(char *image)
 			dirBlock1.entries[i].inum = -1;
 		}
 
-
-
-
 		// | CR | M_all | D0 | I0 | M0 | EOL
-
 
 		//write initial CR
 		CR.EOL = 0;
@@ -111,7 +110,6 @@ int server_init(char *image)
 		pwrite(imageFD, &dirBlock1, MFS_BLOCK_SIZE, CR.EOL);
 
 		node1.blocks[0] = CR.EOL;//set iNode pointer to this block
-
 		CR.EOL += MFS_BLOCK_SIZE;
 
 		//populate iNode
@@ -121,10 +119,12 @@ int server_init(char *image)
 		pwrite(imageFD, &node1, sizeof(struct iNode), CR.EOL); //write iNode
 
 		map1.nodes[0] = CR.EOL;//set iMap pointer
+		map1.memNodes[0] = node1;//TODO store node in mem structure
 		CR.EOL += sizeof(struct iNode);//advance past iNode
 
 		//write new map piece
 		pwrite(imageFD, &map1, sizeof(struct iMap), CR.EOL);
+		CR.memMaps[0] = map1;//TODO store map in mem struct
 		CR.maps[0] = CR.EOL; //update CR pointer to new iMap
 
 		//update EOL to point at very end of file
@@ -141,8 +141,8 @@ int server_init(char *image)
 		int i;
 		for(i=0; i<256; i++)
 		{
-			pread(imageFD, &CR.maps[i], sizeof(int), (i+1) * sizeof(int));
-			//printf("bytes read %d at offset %d \n ", check, i+1 * sizeof(int));
+			int check = pread(imageFD, &CR.maps[i], sizeof(int)+sizeof(struct iMap), (i+1) * (sizeof(int)+sizeof(struct iMap)));
+			printf("bytes read %d at offset %d \n ", check, i+1 * sizeof(int));
 		}
 		//printf("pants");
 	}
