@@ -80,6 +80,7 @@ int server_init(char *image)
 
 
 
+
 		// | CR | M_all | D0 | I0 | M0 | EOL
 
 
@@ -128,9 +129,11 @@ int server_init(char *image)
 
 		pwrite(imageFD, &CR, sizeof(struct checkRegion), 0); //write CR with correct EOL
 
+		fsync(imageFD);
 	}
 	else //image exists, read in CR to memory
 	{
+
 		pread(imageFD, &CR.EOL, sizeof(int), 0);//read in value of EOL
 		int i;
 		for(i=0; i<256; i++)
@@ -160,8 +163,12 @@ int server_write(int inum, char *buffer, int block)
 	return 0;
 }
 
+
 int server_read(int inum, char *buffer, int block)
 {
+
+	close(imageFD);
+
 	return 0;
 }
 
