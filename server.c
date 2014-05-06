@@ -36,9 +36,7 @@ struct iNode
 };
 struct dirBlock//block of directory entries
 {
-	MFS_Stat_t stats;
 	MFS_DirEnt_t entries[64];
-
 };
 
 //routine to open server disk image, or create one if it doesnt exist
@@ -265,8 +263,8 @@ main(int argc, char *argv[])
 
 
 		if (rc > 0) {
-			int unpacked = unpack(buffer);//helper method to decode package_t and call proper server method
-			if (unpacked < 0)
+			buffer.result = unpack(buffer);//helper method to decode package_t and call proper server method
+			if (buffer.result < 0)
 			{
 				//i don't know what would happen here
 			}

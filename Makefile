@@ -9,4 +9,4 @@ all:
 	export LD_LIBRARY_PATH=.
 
 clean:
-	rm -f server.o udp.o client.o mfs.o libmfs.so server client
+	rm -f server.o udp.o client.o mfs.o libmfs.so server client mane
