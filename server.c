@@ -16,6 +16,10 @@ iNode contents: size, type(file or dir), 14 "pointers"(int offsets)
 iMap contents: ID 0-255, 16 pointers to iNodes
 4096 iNodes = 256 iMap pieces
  */
+struct dirBlock//block of directory entries
+{
+	MFS_DirEnt_t entries[64];
+};
 struct iNode
 {
 	//size of file, miltiple of 4096 for directories. for files, offset of last non-zero byte
@@ -23,6 +27,7 @@ struct iNode
 	MFS_Stat_t stats;
 	//int size;
 	int blocks[14];
+	//struct dirBlock memBlocks[14];
 	//int offset; //offset of this iNode (may help in testing)
 };
 struct iMap //contains up to 16 pointers to iNodes
@@ -39,11 +44,11 @@ struct checkRegion //contains up to 256 pointers to iMap pieces
 
 } CR;
 
-
-struct dirBlock//block of directory entries
+struct holderNode//used to hold 1 directory iNode and all its possible contents
 {
-	MFS_DirEnt_t entries[64];
-};
+	struct dirBlock memBlocks[14];
+	int offsets[14];
+}holder;
 
 //routine to open server disk image, or create one if it doesnt exist
 //build CR or read it in off existing image.
@@ -141,12 +146,12 @@ int server_init(char *image)
 		int i;
 		for(i=0; i<256; i++)//read map pieces into
 		{
-			int check = pread(imageFD, &CR.maps[i], sizeof(int)+sizeof(struct iMap), (i+1) * (sizeof(int)+sizeof(struct iMap)));
-			printf("bytes read %d at offset %d \n ", check, i+1 * sizeof(int));
+			pread(imageFD, &CR.maps[i], sizeof(int)+sizeof(struct iMap), (i+1) * (sizeof(int)+sizeof(struct iMap)));
+			//printf("bytes read %d at offset %d \n ", check, i+1 * sizeof(int));
 		}
 	}
 	fsync(imageFD);
-	close(imageFD);
+	//close(imageFD);
 	return 0;
 }
 //MFS_Lookup() takes the parent inode number (which should be the inode number of a directory)
@@ -156,6 +161,50 @@ int server_init(char *image)
 //int pinum, char *name
 int server_lookup(Package_t *packIn)
 {
+	if(packIn->pinum<0 || packIn->pinum > 4095)
+	{
+		packIn->result = -1;
+		return -1;
+	}
+	//lookup
+	struct iNode look = CR.memMaps[packIn->pinum/256].memNodes[packIn->pinum%16];
+	int type = look.stats.type;
+	if(type == MFS_REGULAR_FILE)//if its a file
+	{
+		packIn->result = -1;
+		return -1;
+	}
+	else if(type == MFS_DIRECTORY)//if its a directory
+	{
+		int i, j;
+		for(i=0; i<14; i++)
+		{
+			//read a whole directory iNode into memory (possibly 14 block of 64 directories)
+			pread(imageFD, &holder.memBlocks[i], sizeof(struct dirBlock), look.blocks[i]);
+		}
+		//scan over all possible valid entries in this iNode(now in memory)
+		for(i=0; i<14; i++)
+		{
+			for(j=0; j<64; j++)
+			{
+				if(strcmp(holder.memBlocks[i].entries[j].name, packIn->name) == 0)
+				{
+					//compare to names and save and return the corresponding iNode# if found
+					packIn->result = holder.memBlocks[i].entries[j].inum;
+					return holder.memBlocks[i].entries[j].inum;
+				}
+			}
+		}
+		packIn->result = -1;//the name was not found
+		return -1;
+	}
+	else
+	{
+		packIn->result = -1;
+		return -1;
+	}
+
+	//check if node is a directory
 	return 0;
 }
 
@@ -204,6 +253,7 @@ int server_creat(Package_t *packIn)
 	}
 	else//something is fucked!!!
 	{
+		packIn->result = -1;
 		return -1;
 	}
 
@@ -285,10 +335,33 @@ main(int argc, char *argv[])
 	sd = UDP_Open(port);
 	assert(sd > -1);
 
+
+
 	char *imageIn = (char*)argv[2];
 	buffer = malloc(sizeof(Package_t));
 
 	server_init(imageIn);
+
+	if(DEBUG)
+	{
+		buffer->block = 0; //int The block of the inode
+		strcpy(buffer->buffer, "pants");//char[] buffer for read request from client
+		buffer->inum = 0;//int The inode number
+		strcpy(buffer->name, "pants");// char[] The file name
+		buffer->pinum = 0; //int  The parent inode number
+		buffer->requestType = 0;//int Request being sent to server(read, write, etc)
+		buffer->result = 0;//int The type of the inode(file or directory)
+		buffer->type = 0; //int The result of the request sent to server
+
+		MFS_Stat_t test;//MFS_Stat_t Used by MFS_Stat for formatting
+		test.size = 0;//size of file, %block size for directories, otherwise offset to last non-zero byte in data
+		test.type = 0;// 0 = directory, 1 = file
+		buffer->m = test;
+
+		server_lookup(buffer);
+
+	}
+
 
 	printf("                                SERVER:: waiting in loop\n");
 
