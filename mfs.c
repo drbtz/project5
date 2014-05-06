@@ -64,7 +64,7 @@ int MFS_Lookup(int pinum, char *name)
 	int rc = UDP_Write(sd, &saddr, &lookupPackage, sizeof(Package_t));
 	if (rc <= 0) return -1;
 
-
+	printf("before select.\n");
 	//Wait for a response from the server(5 second timeout)
 	if (select(FD_SETSIZE, &sockets, NULL, NULL, &timeout)) {
 		int rc = UDP_Read(sd, &raddr, &lookupPackage, sizeof(Package_t));

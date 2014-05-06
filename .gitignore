@@ -35,3 +35,4 @@ bare.img
 .*~
 server
 client
+.__afs*

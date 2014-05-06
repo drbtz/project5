@@ -132,6 +132,7 @@ main(int argc, char *argv[])
 	if(argc != 3)
 	{
 		printf("Usage: server [port-number] [file-system-image]");
+		exit(-1);
 	}
 
 	//open port
