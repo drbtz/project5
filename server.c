@@ -8,7 +8,7 @@
 int imageFD;
 struct sockaddr_in s;
 int sd;
-Package_t buffer;
+Package_t *buffer;
 
 int DEBUG = 0;
 /*
@@ -139,48 +139,78 @@ int server_init(char *image)
 
 		pread(imageFD, &CR.EOL, sizeof(int), 0);//read in value of EOL
 		int i;
-		for(i=0; i<256; i++)
+		for(i=0; i<256; i++)//read map pieces into
 		{
 			int check = pread(imageFD, &CR.maps[i], sizeof(int)+sizeof(struct iMap), (i+1) * (sizeof(int)+sizeof(struct iMap)));
 			printf("bytes read %d at offset %d \n ", check, i+1 * sizeof(int));
 		}
-		//printf("pants");
 	}
 	fsync(imageFD);
 	close(imageFD);
 	return 0;
 }
-
-int server_lookup(int pinum, char *name)
+//MFS_Lookup() takes the parent inode number (which should be the inode number of a directory)
+//and looks up the entry name in it. The inode number of name is returned.
+//Success: return inode number of name; failure: return -1.
+//Failure modes: invalid pinum, name does not exist in pinum.
+//int pinum, char *name
+int server_lookup(Package_t *packIn)
 {
 	return 0;
 }
 
-int server_stat(int inum, MFS_Stat_t m)
+//int inum, MFS_Stat_t m
+int server_stat(Package_t *packIn)
+{
+	return 0;
+}
+//int inum, char *buffer, int block
+int server_write(Package_t *packIn)
 {
 	return 0;
 }
 
-int server_write(int inum, char *buffer, int block)
-{
-	return 0;
-}
-
-
-int server_read(int inum, char *buffer, int block)
+//int inum, char *buffer, int block
+int server_read(Package_t *packIn)
 {
 
 	close(imageFD);
 
 	return 0;
 }
-
-int server_creat(int pinum, int type, char *name)
+//MFS_Creat() makes a file ( type == MFS_REGULAR_FILE) or directory ( type == MFS_DIRECTORY)
+//in the parent directory specified by pinum of name name .
+//Returns 0 on success, -1 on failure.
+//Failure modes: pinum does not exist, or name is too long.
+//If name already exists, return success (think about why).
+//int pinum, int type, char *name
+int server_creat(Package_t *packIn)
 {
+	//name length check already done in MFS_lib
+	//printf("type %d \n", type);
+
+	if(packIn->pinum<0 || packIn->pinum>4095)
+	{
+		return -1;
+	}
+
+	if(packIn->type == 1) //its a file
+	{
+
+	}
+	else if(packIn->type == 0)//its a directory
+	{
+
+	}
+	else//something is fucked!!!
+	{
+		return -1;
+	}
+
 	return 0;
 }
-
-int server_unlink(int pinum, char *name)
+//int pinum, char *name
+int server_unlink(Package_t *packIn)
 {
 	return 0;
 }
@@ -189,41 +219,41 @@ int server_shutdown()
 {
 	fsync(imageFD);
 	close(imageFD);
-	buffer.result = 0;
-	UDP_Write(sd, &s, &buffer, sizeof(Package_t));
+	buffer->result = 0;
+	UDP_Write(sd, &s, buffer, sizeof(Package_t));
 	exit(0);
 	return 0;
 }
 
 //unpack the package_t file sent by the client library, call method, return success/fail to main
-int unpack(Package_t buff)
+int unpack(Package_t *buff)
 {
 	int returnCode;
 
-	switch(buff.requestType)
+	switch(buff->requestType)
 	{
 	case LOOKUP_REQUEST:
-		returnCode = server_lookup(buff.pinum, buff.name);
+		returnCode = server_lookup(buff);
 		break;
 
 	case STAT_REQUEST:
-		returnCode = server_stat(buff.inum, buff.m);
+		returnCode = server_stat(buff);
 		break;
 
 	case WRITE_REQUEST:
-		returnCode = server_write(buff.inum, buff.buffer, buff.block);
+		returnCode = server_write(buff);
 		break;
 
 	case READ_REQUEST:
-		returnCode = server_read(buff.inum, buff.buffer, buff.block);
+		returnCode = server_read(buff);
 		break;
 
 	case CREAT_REQUEST:
-		returnCode = server_creat(buff.inum, buff.type, buff.name);
+		returnCode = server_creat(buff);
 		break;
 
 	case UNLINK_REQUEST:
-		returnCode = server_unlink(buff.pinum, buff.name);
+		returnCode = server_unlink(buff);
 		break;
 
 	case SHUTDOWN_REQUEST:
@@ -256,6 +286,7 @@ main(int argc, char *argv[])
 	assert(sd > -1);
 
 	char *imageIn = (char*)argv[2];
+	buffer = malloc(sizeof(Package_t));
 
 	server_init(imageIn);
 
@@ -264,22 +295,20 @@ main(int argc, char *argv[])
 	while (1) {
 
 
-		int rc = UDP_Read(sd, &s, &buffer, sizeof(Package_t));
+		int rc = UDP_Read(sd, &s, buffer, sizeof(Package_t));
 
 
 
 
-		if (rc > 0) {
-			buffer.result = unpack(buffer);//helper method to decode package_t and call proper server method
-			if (buffer.result < 0)
-			{
-				//i don't know what would happen here
-			}
+		if (rc > 0)
+		{
+			unpack(buffer);//helper method to decode package_t and call proper server method
 
-			printf("                                SERVER:: read %d bytes (message: '%s')\n", rc, buffer.name);
+
+			printf("                                SERVER:: read %d bytes (message: '%s')\n", rc, buffer->name);
 			//Package_t reply;
-			strcpy(buffer.name, "Reply");
-			rc = UDP_Write(sd, &s, &buffer, BUFFER_SIZE);
+			strcpy(buffer->name, "Reply");
+			rc = UDP_Write(sd, &s, buffer, sizeof(Package_t));
 		}
 	}
 

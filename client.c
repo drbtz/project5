@@ -7,7 +7,7 @@ char buffer[BUFFER_SIZE];
 int
 main(int argc, char *argv[])
 {
-    int rc = MFS_Init("mumble-37.cs.wisc.edu", 11614);
+    int rc = MFS_Init("mumble-32.cs.wisc.edu", 11614);
 
     printf("CLIENT:: about to send message (%d)\n", rc);
     char message[BUFFER_SIZE];
