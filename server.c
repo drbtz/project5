@@ -6,6 +6,9 @@
 
 //global variables
 int imageFD;
+struct sockaddr_in s;
+int sd;
+Package_t buffer;
 
 int DEBUG = 0;
 /*
@@ -186,6 +189,8 @@ int server_shutdown()
 {
 	fsync(imageFD);
 	close(imageFD);
+	buffer.result = 0;
+	UDP_Write(sd, &s, &buffer, sizeof(Package_t));
 	exit(0);
 	return 0;
 }
@@ -222,7 +227,9 @@ int unpack(Package_t buff)
 		break;
 
 	case SHUTDOWN_REQUEST:
+		printf("before server_shutdown\n");
 		returnCode = server_shutdown();
+		printf("after server_shutdown\n");
 		break;
 	}
 	return returnCode;
@@ -239,13 +246,13 @@ main(int argc, char *argv[])
 	//check for errors  prompt> server [portnum] [file-system-image]
 	if(argc != 3)
 	{
-		printf("Usage: server [port-number] [file-system-image]");
+		printf("Usage: server [port-number] [file-system-image]\n");
 		exit(-1);
 	}
 
 	//open port
 	int port = atoi(argv[1]);
-	int sd = UDP_Open(port);
+	sd = UDP_Open(port);
 	assert(sd > -1);
 
 	char *imageIn = (char*)argv[2];
@@ -255,9 +262,9 @@ main(int argc, char *argv[])
 	printf("                                SERVER:: waiting in loop\n");
 
 	while (1) {
-		struct sockaddr_in s;
-		Package_t buffer;
-		int rc = UDP_Read(sd, &s, &buffer, BUFFER_SIZE);
+
+
+		int rc = UDP_Read(sd, &s, &buffer, sizeof(Package_t));
 
 
 

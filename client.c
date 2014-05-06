@@ -14,7 +14,8 @@ main(int argc, char *argv[])
     sprintf(message, "Hello World");
     //rc = UDP_Write(sd, &saddr, message, BUFFER_SIZE);
     // printf("CLIENT:: sent message (%d)\n", rc);
-    rc = MFS_Lookup(1, message);
+    rc = MFS_Shutdown();
+    if(rc == 0) printf("YAY!\n");
     //if (rc == 0) {
 	//struct sockaddr_in raddr;
 	//int rc = UDP_Read(sd, &raddr, buffer, BUFFER_SIZE);

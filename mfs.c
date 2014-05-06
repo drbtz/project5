@@ -269,6 +269,6 @@ int MFS_Shutdown()
 			int rc = UDP_Read(sd, &raddr, &shutdownPackage, sizeof(Package_t));
 			printf("CLIENT:: read %d bytes (message: '%s')\n", rc, shutdownPackage.buffer);
 		}
-
+		printf("%d\n", shutdownPackage.result);
 		return shutdownPackage.result;
 }

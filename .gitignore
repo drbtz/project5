@@ -36,3 +36,5 @@ bare.img
 server
 client
 .__afs*
+runtests.log
+mane
