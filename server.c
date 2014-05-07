@@ -382,18 +382,15 @@ int server_creat(Package_t *packIn)
 			a=a2;//this is the DIR block
 			b=b2;//this is the DIR entry
 
-			//TODO, update parent node,data,map TEST TEST TEST
 
-			//block writen to offset 564484
 			pwrite(imageFD, &inMemoryDataBlock.memBlocks[a], sizeof(struct dirBlock), CR.EOL);//write updated DIR block
 			parentInode->blockOffset[a] = CR.EOL;//point inMem parent iNode at new block
 			CR.EOL += MFS_BLOCK_SIZE;//point past written block
-			//node written to offset 568580
+
 			pwrite(imageFD, &parentInode, sizeof(struct iNode), CR.EOL); //write iNode
 			CR.memMaps[packIn->pinum/16].nodeOffset[packIn->pinum%16] = CR.EOL;//set inMem iMap pointer to new node
 			CR.EOL += sizeof(struct iNode);//advance past iNode
 
-			//write new map piece, offset is 568644
 			pwrite(imageFD, &CR.memMaps[packIn->pinum/16], sizeof(struct iMap), CR.EOL);
 			CR.mapOffset[packIn->pinum] = CR.EOL; //update CR pointer to new iMap
 
@@ -422,31 +419,63 @@ int server_creat(Package_t *packIn)
 			strcpy(nameIn, "..");
 			strcpy(newDir.dirEntry[1].name, nameIn);
 
-			pwrite(imageFD, &newDir, MFS_BLOCK_SIZE, CR.EOL);
-
+			pwrite(imageFD, &newDir, sizeof(struct dirBlock), CR.EOL);
 			newNode->blockOffset[0] = CR.EOL;//set iNode pointer to this block
-			CR.EOL += MFS_BLOCK_SIZE;
-
+			CR.EOL += sizeof(struct dirBlock);
 			//populate iNode
 			newNode->nodeStats.type = MFS_DIRECTORY;//set type to directory entry
-			newNode->nodeStats.size = MFS_BLOCK_SIZE ; // set size to default block size
-
+			newNode->nodeStats.size = sizeof(struct dirBlock) ; // set size to default block size
 			pwrite(imageFD, &newNode, sizeof(struct iNode), CR.EOL); //write iNode
-
+			//populate map
 			CR.memMaps[i].nodeOffset[j] = CR.EOL;//set iMap pointer
-			//map1.memNodes[0] = node1;//store node in mem structure
 			CR.EOL += sizeof(struct iNode);//advance past iNode
-
 			//write new map piece
 			pwrite(imageFD, &CR.memMaps[i], sizeof(struct iMap), CR.EOL);
-			//CR.memMaps[0] = map1;//store map in mem struct
 			CR.mapOffset[i] = CR.EOL; //update CR pointer to new iMap
+			//update EOL to point at very end of file
+			CR.EOL += sizeof(struct iMap);
+
+
+			///////////////////////////////////////////////////////////////////////////
+			int a, b, a2, b2;
+			for(a=0; a<14; a++)
+			{
+				for(b=0; b<64; b++)//TODO error check on values
+				{
+					if(inMemoryDataBlock.memBlocks[a].dirEntry[b].inum == -1)
+					{
+						//update info for new directory entry
+						strcpy(inMemoryDataBlock.memBlocks[a].dirEntry[b].name, packIn->name);//set name in holder
+						inMemoryDataBlock.memBlocks[a].dirEntry[b].inum = i*16 + j;           //set iNode in holder
+						a2=a;
+						b2=b;
+						break;
+					}
+				}
+			}//here we need a catch for when the DIR is completely full?
+			if(a==14 && b==64)
+			{
+				//TODO DIR is full, do something. Error or over flow to new DIR block??
+			}
+			a=a2;//this is the DIR block
+			b=b2;//this is the DIR entry
+
+			//update parent D I M
+			pwrite(imageFD, &inMemoryDataBlock.memBlocks[a], sizeof(struct dirBlock), CR.EOL);//write updated DIR block
+			parentInode->blockOffset[a] = CR.EOL;//point inMem parent iNode at new block
+			CR.EOL += MFS_BLOCK_SIZE;//point past written block
+
+			pwrite(imageFD, &parentInode, sizeof(struct iNode), CR.EOL); //write iNode
+			CR.memMaps[packIn->pinum/16].nodeOffset[packIn->pinum%16] = CR.EOL;//set inMem iMap pointer to new node
+			CR.EOL += sizeof(struct iNode);//advance past iNode
+
+			pwrite(imageFD, &CR.memMaps[packIn->pinum/16], sizeof(struct iMap), CR.EOL);
+			CR.mapOffset[packIn->pinum] = CR.EOL; //update CR pointer to new iMap
 
 			//update EOL to point at very end of file
 			CR.EOL += sizeof(struct iMap);
 
 			pwrite(imageFD, &CR, sizeof(struct checkRegion), 0); //sync Mem CR with disk CR
-
 			fsync(imageFD);
 		}
 		else//something is fucked!!!
