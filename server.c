@@ -16,6 +16,10 @@ int DEBUG = 1;
 iNode contents: size, type(file or dir), 14 "pointers"(int offsets)
 iMap contents: ID 0-255, 16 pointers to iNodes
 4096 iNodes = 256 iMap pieces
+
+//size of CR = 279556
+//size of iMap = 64
+//size of iNode = 1088
  */
 struct dirBlock//block of directory entries
 {
@@ -93,6 +97,10 @@ int server_init(char *image)
 		struct iMap map1;
 		struct iNode node1;
 		struct dirBlock dirBlock1;
+
+		//size of CR = 279556
+		//size of iMap = 64
+		//size of iNode = 1088
 
 		//"Unused entries in the inode map and unused direct pointers
 		//in the inodes should have the value 0."
@@ -189,7 +197,7 @@ int server_lookup(Package_t *packIn)
 	}
 	//lookup
 	struct iNode look = CR.memMaps[packIn->pinum/16].memNodes[packIn->pinum%16];
-	int type = look.stats.type;//TODO ISSUE
+	int type = look.stats.type;
 	if(type == MFS_REGULAR_FILE)//if its a file
 	{
 		packIn->result = -1;
@@ -199,10 +207,26 @@ int server_lookup(Package_t *packIn)
 	{
 		int i, j;
 
-		for(i=0; i<14; i++)
+		//lookup 1: look.blocks[0] = 558084
+		//lookup 2: look.blocks[0] =
+
+		/*
+		 * issue:  holder contains the correct data after 1st look up.  Creat, makes the file correctly
+		 * but either fails to save it properly(offset pointer) or, the 2nd lookup is reading the wrong place.
+		 * correct data exists in holder, but is overwritten on 2nd lookup.
+		 *
+		 * try clearing contents of holder after write to disk and then tracking where 2nd lookup reads from
+		 * it should be the same location as creat saved
+		 */
+
+
+		for(i=0; i<14; i++)//TODO after creat, the new name "test", should be found in here.
 		{
 			//read a whole directory iNode into memory (possibly 14 blocks of 64 directories)
 			pread(imageFD, &holder.memBlocks[i], sizeof(struct dirBlock), look.blocks[i]);
+			//also save offset to corresponding block  TODO???
+
+
 		}
 		//scan over all possible valid entries in this iNode(now in memory)
 		for(i=0; i<14; i++)
@@ -300,6 +324,7 @@ int server_creat(Package_t *packIn)
 		}
 		i = eye;
 		j = jay;
+		nodeInit(newNode);
 		//create new based on type
 		if(packIn->type == 1) //its a file
 		{
@@ -307,7 +332,8 @@ int server_creat(Package_t *packIn)
 			newNode->stats.size = 0;
 
 
-			//TODO must link new file into parent directory
+
+
 			//access to name, type, pinum
 			int a, b;
 			for(a=0; a<14; a++)
@@ -320,7 +346,11 @@ int server_creat(Package_t *packIn)
 						strcpy(holder.memBlocks[a].entries[b].name, packIn->name);
 						holder.memBlocks[a].entries[b].inum = i*16 + j;
 						pwrite(imageFD, &holder.memBlocks[a], sizeof(MFS_BLOCK_SIZE), CR.EOL);
-
+						newNode->blocks[0] = CR.EOL;
+						CR.EOL += MFS_BLOCK_SIZE;
+						a = 14;
+						b = 64;
+						break;
 					}
 				}
 			}
@@ -509,17 +539,17 @@ main(int argc, char *argv[])
 
 		server_creat(buffer);
 
-		buffer->block = 0; //int The block of the inode
+		buffer->block = 0; 			    //int The block of the inode
 		strcpy(buffer->buffer, "pants");//char[] buffer for read request from client
-		buffer->inum = 0;//int The inode number
-		strcpy(buffer->name, "test");// char[] The file name
-		buffer->pinum = 0; //int  The parent inode number
-		buffer->requestType = 0;//int Request being sent to server(read, write, etc)
-		buffer->result = 0;//int The type of the inode(file or directory)
-		buffer->type = 0; //int The result of the request sent to server
+		buffer->inum = 0;			    //int The inode number
+		strcpy(buffer->name, "test");   // char[] The file name
+		buffer->pinum = 0; 			    //int  The parent inode number
+		buffer->requestType = 0;		//int Request being sent to server(read, write, etc)
+		buffer->result = 0; 			//int The result of the request sent to server
+		buffer->type = 0; 				//int The type of the inode(file or directory)
 
-		test.size = 0;//size of file, %block size for directories, otherwise offset to last non-zero byte in data
-		test.type = 0;// 0 = directory, 1 = file
+		test.size = 0;					//size of file, %block size for directories, otherwise offset to last non-zero byte in data
+		test.type = 0;					// 0 = directory, 1 = file
 		buffer->m = test;
 
 		server_lookup(buffer);
