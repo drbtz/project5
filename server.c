@@ -11,7 +11,7 @@ int sd;
 Package_t *buffer;
 int newInodeCount;
 
-int DEBUG = 0;
+int DEBUG = 1;
 /*
 iNode contents: size, type(file or dir), 14 "pointers"(int offsets)
 iMap contents: ID 0-255, 16 pointers to iNodes
@@ -59,12 +59,20 @@ void dirInit(struct dirBlock *newDir)
 		newDir->entries[i].inum = -1;
 	}
 }
-void blockInit(struct iNode *new)
+void nodeInit(struct iNode *new)
 {
 	int i;
 	for(i=0; i<14; i++)//initialize directory block
 	{
 		new->blocks[i] = 0;
+	}
+}
+void mapInit(struct iMap *new)
+{
+	int i;
+	for(i=0; i<16; i++)//initialize directory block
+	{
+		new->nodes[i] = 0;
 	}
 }
 
@@ -98,7 +106,8 @@ int server_init(char *image)
 				CR.memMaps[i].nodes[j] = 0;
 			}
 		}
-		blockInit(&node1);
+		mapInit(&map1);
+		nodeInit(&node1);
 		dirInit(&dirBlock1);
 
 		// | CR | M_all | D0 | I0 | M0 | EOL
@@ -180,7 +189,7 @@ int server_lookup(Package_t *packIn)
 	}
 	//lookup
 	struct iNode look = CR.memMaps[packIn->pinum/16].memNodes[packIn->pinum%16];
-	int type = look.stats.type;
+	int type = look.stats.type;//TODO ISSUE
 	if(type == MFS_REGULAR_FILE)//if its a file
 	{
 		packIn->result = -1;
@@ -189,9 +198,10 @@ int server_lookup(Package_t *packIn)
 	else if(type == MFS_DIRECTORY)//if its a directory
 	{
 		int i, j;
+
 		for(i=0; i<14; i++)
 		{
-			//read a whole directory iNode into memory (possibly 14 block of 64 directories)
+			//read a whole directory iNode into memory (possibly 14 blocks of 64 directories)
 			pread(imageFD, &holder.memBlocks[i], sizeof(struct dirBlock), look.blocks[i]);
 		}
 		//scan over all possible valid entries in this iNode(now in memory)
@@ -268,28 +278,76 @@ int server_creat(Package_t *packIn)
 	else if(parent == -1)//parent DIR exists, name does not
 	{
 		struct iNode *newNode;
-		blockInit(newNode);
+		newNode = malloc(sizeof(struct iNode));
+		nodeInit(newNode);
 
 		//scan CR to find empty iNode
 		int i, j;
+		int eye, jay;
 		for(i=0; i<256; i++)
 		{
-			for(j=0; j<16; j++)
+			for(j=0; j<16; j++)//there should be a better way to do this
 			{
 				if(CR.memMaps[i].nodes[j] == 0)
 				{
 					newNode = &CR.memMaps[i].memNodes[j];
+					eye = i;
+					jay = j;
+					i = 256;
+					j = 16;
 				}
 			}
 		}
+		i = eye;
+		j = jay;
 		//create new based on type
 		if(packIn->type == 1) //its a file
 		{
 			newNode->stats.type = MFS_REGULAR_FILE;
+			newNode->stats.size = 0;
+
+
+			//TODO must link new file into parent directory
+			//access to name, type, pinum
+			int a, b;
+			for(a=0; a<14; a++)
+			{
+				for(b=0; b<64; b++)
+				{
+					if(holder.memBlocks[a].entries[b].inum == -1)
+					{
+						//setnam and inum, write block, inc EOL
+						strcpy(holder.memBlocks[a].entries[b].name, packIn->name);
+						holder.memBlocks[a].entries[b].inum = i*16 + j;
+						pwrite(imageFD, &holder.memBlocks[a], sizeof(MFS_BLOCK_SIZE), CR.EOL);
+
+					}
+				}
+			}
+
+			pwrite(imageFD, &newNode, sizeof(struct iNode), CR.EOL); //write iNode
+
+			CR.memMaps[i].nodes[j] = CR.EOL;//set iMap pointer
+			//map1.memNodes[0] = node1;//store node in mem structure
+			CR.EOL += sizeof(struct iNode);//advance past iNode
+
+			//write new map piece
+			pwrite(imageFD, &CR.memMaps[i], sizeof(struct iMap), CR.EOL);
+			//CR.memMaps[0] = map1;//store map in mem struct
+			CR.maps[i] = CR.EOL; //update CR pointer to new iMap
+
+			//update EOL to point at very end of file
+			CR.EOL += sizeof(struct iMap);
+
+			pwrite(imageFD, &CR, sizeof(struct checkRegion), 0); //sync Mem CR with disk CR
+
+			fsync(imageFD);
+
 		}
 		else if(packIn->type == 0)//its a directory
 		{
 			newNode->stats.type = MFS_DIRECTORY;
+			newNode->stats.size = MFS_BLOCK_SIZE;
 			//setup directory
 			struct dirBlock newDir;
 			dirInit(&newDir);
@@ -341,11 +399,13 @@ int server_creat(Package_t *packIn)
 	else
 	{
 		printf("something is fucked in server_creat\n");
+		packIn->result = -1;
+		return -1;
 	}
 
 
 
-
+	//packIn->result = 0;
 	return 0;
 }
 //int pinum, char *name
@@ -433,16 +493,31 @@ main(int argc, char *argv[])
 
 	if(DEBUG)
 	{
+		buffer->block = 0;              //int The block of the inode
+		strcpy(buffer->buffer, "pants");//char[] buffer for read request from client
+		buffer->inum = 0;               //int The inode number
+		strcpy(buffer->name, "test");  // char[] The file name
+		buffer->pinum = 0;              //int  The parent inode number
+		buffer->requestType = 0;        //int Request being sent to server(read, write, etc)
+		buffer->result = 0;             //int The result of the inode(file or directory)
+		buffer->type = 1;               //int The type of the request sent to server
+
+		MFS_Stat_t test;                //MFS_Stat_t Used by MFS_Stat for formatting
+		test.size = 0;                  //size of file, %block size for directories, otherwise offset to last non-zero byte in data
+		test.type = 0;                  // 0 = directory, 1 = file
+		buffer->m = test;
+
+		server_creat(buffer);
+
 		buffer->block = 0; //int The block of the inode
 		strcpy(buffer->buffer, "pants");//char[] buffer for read request from client
 		buffer->inum = 0;//int The inode number
-		strcpy(buffer->name, "pants");// char[] The file name
+		strcpy(buffer->name, "test");// char[] The file name
 		buffer->pinum = 0; //int  The parent inode number
 		buffer->requestType = 0;//int Request being sent to server(read, write, etc)
 		buffer->result = 0;//int The type of the inode(file or directory)
 		buffer->type = 0; //int The result of the request sent to server
 
-		MFS_Stat_t test;//MFS_Stat_t Used by MFS_Stat for formatting
 		test.size = 0;//size of file, %block size for directories, otherwise offset to last non-zero byte in data
 		test.type = 0;// 0 = directory, 1 = file
 		buffer->m = test;
@@ -451,29 +526,25 @@ main(int argc, char *argv[])
 
 	}
 
+	if(!DEBUG)
+	{
+		printf("                                SERVER:: waiting in loop\n");
 
-	printf("                                SERVER:: waiting in loop\n");
+		while (1) {
 
-	while (1) {
+			int rc = UDP_Read(sd, &s, buffer, sizeof(Package_t));
 
+			if (rc > 0)
+			{
+				unpack(buffer);//helper method to decode package_t and call proper server method
 
-		int rc = UDP_Read(sd, &s, buffer, sizeof(Package_t));
-
-
-
-
-		if (rc > 0)
-		{
-			unpack(buffer);//helper method to decode package_t and call proper server method
-
-
-			printf("                                SERVER:: read %d bytes (message: '%s')\n", rc, buffer->name);
-			//Package_t reply;
-			strcpy(buffer->name, "Reply");
-			rc = UDP_Write(sd, &s, buffer, sizeof(Package_t));
+				printf("                                SERVER:: read %d bytes (message: '%s')\n", rc, buffer->name);
+				//Package_t reply;
+				strcpy(buffer->name, "Reply");
+				rc = UDP_Write(sd, &s, buffer, sizeof(Package_t));
+			}
 		}
 	}
-
 	return 0;
 }
 
