@@ -10,8 +10,9 @@ struct sockaddr_in s;
 int sd;
 Package_t *buffer;
 int newInodeCount;
+struct iNode *parentInode; //used in creat, when we make a new file we have to update parent iNode and map
 
-int DEBUG = 1;
+int DEBUG = 0;
 /*
 iNode contents: size, type(file or dir), 14 "pointers"(int offsets)
 iMap contents: ID 0-255, 16 pointers to iNodes
@@ -23,36 +24,36 @@ iMap contents: ID 0-255, 16 pointers to iNodes
  */
 struct dirBlock//block of directory entries
 {
-	MFS_DirEnt_t entries[64];
+	MFS_DirEnt_t dirEntry[64];
 };
 struct iNode
 {
 	//size of file, miltiple of 4096 for directories. for files, offset of last non-zero byte
 	//stats.type = f11e(1) or direct0ry(0)
-	MFS_Stat_t stats;
+	MFS_Stat_t nodeStats;
 	//int size;
-	int blocks[14];
+	int blockOffset[14];
 	//struct dirBlock memBlocks[14];
 	//int offset; //offset of this iNode (may help in testing)
 };
 struct iMap //contains up to 16 pointers to iNodes
 {
-	int nodes[16];//offset locations of iNodes
+	int nodeOffset[16];//offset locations of iNodes
 	struct iNode memNodes[16];
 	//int offset; //offset of this iMap (may help in testing)
 };
 struct checkRegion //contains up to 256 pointers to iMap pieces
 {
 	int EOL; //end of log pointer
-	int maps[256]; //offset locations of iMaps
+	int mapOffset[256]; //offset locations of iMaps
 	struct iMap memMaps[256];
 
 } CR;
 struct holderNode//used to hold 1 directory iNode and all its possible contents
 {
 	struct dirBlock memBlocks[14];
-	int offsets[14];
-}holder;
+	//int offsets[14];
+}inMemoryDataBlock;
 
 //helper routines----------------------------------------------------
 void dirInit(struct dirBlock *newDir)
@@ -60,7 +61,7 @@ void dirInit(struct dirBlock *newDir)
 	int i;
 	for(i=0; i<64; i++)//initialize directory block
 	{
-		newDir->entries[i].inum = -1;
+		newDir->dirEntry[i].inum = -1;
 	}
 }
 void nodeInit(struct iNode *new)
@@ -68,7 +69,7 @@ void nodeInit(struct iNode *new)
 	int i;
 	for(i=0; i<14; i++)//initialize directory block
 	{
-		new->blocks[i] = 0;
+		new->blockOffset[i] = 0;
 	}
 }
 void mapInit(struct iMap *new)
@@ -76,7 +77,7 @@ void mapInit(struct iMap *new)
 	int i;
 	for(i=0; i<16; i++)//initialize directory block
 	{
-		new->nodes[i] = 0;
+		new->nodeOffset[i] = 0;
 	}
 }
 
@@ -84,6 +85,12 @@ void mapInit(struct iMap *new)
 //build CR or read it in off existing image.
 int server_init(char *image)
 {
+	printf("size of dirBlock: %d\n", sizeof(struct dirBlock));
+	printf("size of iNode: %d\n", sizeof(struct iNode));
+	printf("size of iMap: %d\n", sizeof(struct iMap));
+	printf("size of CR: %d\n", sizeof( CR));
+	printf("size of holderNode: %d\n", sizeof(struct holderNode));
+
 	//try to open image
 	imageFD = open(image, O_RDWR);
 
@@ -108,10 +115,10 @@ int server_init(char *image)
 		int i, j;
 		for(i=0; i<256; i++)//initalize CR
 		{
-			CR.maps[i] = sizeof(struct checkRegion) + i*sizeof(struct iMap);
+			CR.mapOffset[i] = sizeof(struct checkRegion) + i*sizeof(struct iMap);
 			for(j=0; j<16; j++)
 			{
-				CR.memMaps[i].nodes[j] = 0;
+				CR.memMaps[i].nodeOffset[j] = 0;
 			}
 		}
 		mapInit(&map1);
@@ -128,38 +135,38 @@ int server_init(char *image)
 		//write initial map (as pieces)
 		for(i=0; i<256; i++)
 		{
-			pwrite(imageFD, &CR.maps[i], sizeof(struct iMap), CR.EOL);
+			pwrite(imageFD, &CR.mapOffset[i], sizeof(struct iMap), CR.EOL);
 			CR.EOL += sizeof(struct iMap);
 		}
 		//populate and write directory block
-		dirBlock1.entries[0].inum = 0;//set . and .. , parent is same as current for root
-		dirBlock1.entries[1].inum = 0;
+		dirBlock1.dirEntry[0].inum = 0;//set . and .. , parent is same as current for root
+		dirBlock1.dirEntry[1].inum = 0;
 
 		char nameIn[60];
 		strcpy(nameIn, ".");
-		strcpy(dirBlock1.entries[0].name, nameIn);
+		strcpy(dirBlock1.dirEntry[0].name, nameIn);
 		strcpy(nameIn, "..");
-		strcpy(dirBlock1.entries[1].name, nameIn);
+		strcpy(dirBlock1.dirEntry[1].name, nameIn);
 
 		pwrite(imageFD, &dirBlock1, MFS_BLOCK_SIZE, CR.EOL);
 
-		node1.blocks[0] = CR.EOL;//set iNode pointer to this block
+		node1.blockOffset[0] = CR.EOL;//set iNode pointer to this block
 		CR.EOL += MFS_BLOCK_SIZE;
 
 		//populate iNode
-		node1.stats.type = MFS_DIRECTORY;//set type to directory entry
-		node1.stats.size = MFS_BLOCK_SIZE ; // set size to default block size
+		node1.nodeStats.type = MFS_DIRECTORY;//set type to directory entry
+		node1.nodeStats.size = MFS_BLOCK_SIZE ; // set size to default block size
 
 		pwrite(imageFD, &node1, sizeof(struct iNode), CR.EOL); //write iNode
 
-		map1.nodes[0] = CR.EOL;//set iMap pointer
+		map1.nodeOffset[0] = CR.EOL;//set iMap pointer
 		map1.memNodes[0] = node1;//store node in mem structure
 		CR.EOL += sizeof(struct iNode);//advance past iNode
 
 		//write new map piece
 		pwrite(imageFD, &map1, sizeof(struct iMap), CR.EOL);
 		CR.memMaps[0] = map1;//store map in mem struct
-		CR.maps[0] = CR.EOL; //update CR pointer to new iMap
+		CR.mapOffset[0] = CR.EOL; //update CR pointer to new iMap
 
 		//update EOL to point at very end of file
 		CR.EOL += sizeof(struct iMap);
@@ -175,7 +182,7 @@ int server_init(char *image)
 		int i;
 		for(i=0; i<256; i++)//read map pieces into
 		{
-			pread(imageFD, &CR.maps[i], sizeof(int)+sizeof(struct iMap), (i+1) * (sizeof(int)+sizeof(struct iMap)));
+			pread(imageFD, &CR.mapOffset[i], sizeof(int)+sizeof(struct iMap), (i+1) * (sizeof(int)+sizeof(struct iMap)));
 			//printf("bytes read %d at offset %d \n ", check, i+1 * sizeof(int));
 		}
 	}
@@ -190,15 +197,16 @@ int server_init(char *image)
 //int pinum, char *name
 int server_lookup(Package_t *packIn)
 {
+	//error check
 	if(packIn->pinum<0 || packIn->pinum > 4095)//check if its in range
 	{
 		packIn->result = -1;
 		return -1;
 	}
 	//lookup
-	struct iNode look = CR.memMaps[packIn->pinum/16].memNodes[packIn->pinum%16];
-	int type = look.stats.type;
-	if(type == MFS_REGULAR_FILE)//if its a file
+	parentInode = &CR.memMaps[packIn->pinum/16].memNodes[packIn->pinum%16];//needs to be global for use in Creat
+	int type = parentInode->nodeStats.type;
+	if(type == MFS_REGULAR_FILE)//if its a file, can not lookup in a file
 	{
 		packIn->result = -1;
 		return -2;
@@ -220,11 +228,13 @@ int server_lookup(Package_t *packIn)
 		 */
 
 
-		for(i=0; i<14; i++)//TODO after creat, the new name "test", should be found in here.
+		for(i=0; i<14; i++)
 		{
-			//read a whole directory iNode into memory (possibly 14 blocks of 64 directories)
-			pread(imageFD, &holder.memBlocks[i], sizeof(struct dirBlock), look.blocks[i]);
-			//also save offset to corresponding block  TODO???
+			//TODO after creat, the new name "test", should be found in here.  It is reading in a block of all 0s
+
+			//read whole parent directory iNode into memory (possibly 14 blocks of 64 directories)
+			pread(imageFD, &inMemoryDataBlock.memBlocks[i], sizeof(struct dirBlock), parentInode->blockOffset[i]);
+
 
 
 		}
@@ -233,11 +243,11 @@ int server_lookup(Package_t *packIn)
 		{
 			for(j=0; j<64; j++)
 			{
-				if(strcmp(holder.memBlocks[i].entries[j].name, packIn->name) == 0)
+				if(strcmp(inMemoryDataBlock.memBlocks[i].dirEntry[j].name, packIn->name) == 0)
 				{
 					//compare to names and save and return the corresponding iNode# if found
-					packIn->result = holder.memBlocks[i].entries[j].inum;
-					return holder.memBlocks[i].entries[j].inum;
+					packIn->result = inMemoryDataBlock.memBlocks[i].dirEntry[j].inum;
+					return inMemoryDataBlock.memBlocks[i].dirEntry[j].inum;
 				}
 			}
 		}
@@ -288,6 +298,7 @@ int server_creat(Package_t *packIn)
 	{
 		return -1;
 	}
+
 	int parent = server_lookup(packIn);
 	if(parent > -1)//if files exists, we don't need to create it
 	{
@@ -299,21 +310,22 @@ int server_creat(Package_t *packIn)
 		packIn->result = -1;
 		return -1;
 	}
-	else if(parent == -1)//parent DIR exists, name does not
+	else if(parent == -1)//parent DIR exists, name(file or DIR) does not
 	{
-		struct iNode *newNode;
+		struct iNode *newNode;//new node for new file
 		newNode = malloc(sizeof(struct iNode));
 		nodeInit(newNode);
 
-		//scan CR to find empty iNode
-		int i, j;
-		int eye, jay;
+		//scan CR to find empty iNode in a iMap piece
+		int i, j, eye, jay;
 		for(i=0; i<256; i++)
 		{
 			for(j=0; j<16; j++)//there should be a better way to do this
 			{
-				if(CR.memMaps[i].nodes[j] == 0)
+
+				if(CR.memMaps[i].nodeOffset[j] == 0)
 				{
+					//found first empty space, point to it, so it updates in memory
 					newNode = &CR.memMaps[i].memNodes[j];
 					eye = i;
 					jay = j;
@@ -328,89 +340,107 @@ int server_creat(Package_t *packIn)
 		//create new based on type
 		if(packIn->type == 1) //its a file
 		{
-			newNode->stats.type = MFS_REGULAR_FILE;
-			newNode->stats.size = 0;
+			//files have no initial size, just an iNode
+			newNode->nodeStats.type = MFS_REGULAR_FILE;
+			newNode->nodeStats.size = 0;
 
-
-
-
-			//access to name, type, pinum
-			int a, b;
+			//here we find a space in the current directory
+			//scan over each block and each entry to find first empty one
+			int a, b, a2, b2;
 			for(a=0; a<14; a++)
 			{
-				for(b=0; b<64; b++)
+				for(b=0; b<64; b++)//TODO error check on values
 				{
-					if(holder.memBlocks[a].entries[b].inum == -1)
+					if(inMemoryDataBlock.memBlocks[a].dirEntry[b].inum == -1)
 					{
-						//setnam and inum, write block, inc EOL
-						strcpy(holder.memBlocks[a].entries[b].name, packIn->name);
-						holder.memBlocks[a].entries[b].inum = i*16 + j;
-						pwrite(imageFD, &holder.memBlocks[a], sizeof(MFS_BLOCK_SIZE), CR.EOL);
-						newNode->blocks[0] = CR.EOL;
-						CR.EOL += MFS_BLOCK_SIZE;
-						a = 14;
-						b = 64;
+						//update info for new directory entry
+						strcpy(inMemoryDataBlock.memBlocks[a].dirEntry[b].name, packIn->name);//set name in holder
+						inMemoryDataBlock.memBlocks[a].dirEntry[b].inum = i*16 + j;           //set iNode in holder
+
+						//write new file to EOL (no data since it is empty file)
+						pwrite(imageFD, &newNode, sizeof(struct iNode), CR.EOL); //write iNode
+						CR.memMaps[i].nodeOffset[j] = CR.EOL;//set iMap pointer to new node
+
+						CR.EOL += sizeof(struct iNode);//advance past iNode
+
+						//write new map piece
+						pwrite(imageFD, &CR.memMaps[i], sizeof(struct iMap), CR.EOL);
+						CR.mapOffset[i] = CR.EOL; //update CR pointer to new iMap
+						//update EOL to point at very end of file
+						CR.EOL += sizeof(struct iMap);
+						a2=a;
+						b2=b;
+
 						break;
 					}
 				}
+			}//here we need a catch for when the DIR is completely full?
+			if(a==14 && b==64)
+			{
+				//TODO DIR is full, do something. Error or over flow to new DIR block??
 			}
+			a=a2;//this is the DIR block
+			b=b2;//this is the DIR entry
 
-			pwrite(imageFD, &newNode, sizeof(struct iNode), CR.EOL); //write iNode
+			//TODO, update parent node,data,map TEST TEST TEST
 
-			CR.memMaps[i].nodes[j] = CR.EOL;//set iMap pointer
-			//map1.memNodes[0] = node1;//store node in mem structure
+			//block writen to offset 564484
+			pwrite(imageFD, &inMemoryDataBlock.memBlocks[a], sizeof(struct dirBlock), CR.EOL);//write updated DIR block
+			parentInode->blockOffset[a] = CR.EOL;//point inMem parent iNode at new block
+			CR.EOL += MFS_BLOCK_SIZE;//point past written block
+			//node written to offset 568580
+			pwrite(imageFD, &parentInode, sizeof(struct iNode), CR.EOL); //write iNode
+			CR.memMaps[packIn->pinum/16].nodeOffset[packIn->pinum%16] = CR.EOL;//set inMem iMap pointer to new node
 			CR.EOL += sizeof(struct iNode);//advance past iNode
 
-			//write new map piece
-			pwrite(imageFD, &CR.memMaps[i], sizeof(struct iMap), CR.EOL);
-			//CR.memMaps[0] = map1;//store map in mem struct
-			CR.maps[i] = CR.EOL; //update CR pointer to new iMap
+			//write new map piece, offset is 568644
+			pwrite(imageFD, &CR.memMaps[packIn->pinum/16], sizeof(struct iMap), CR.EOL);
+			CR.mapOffset[packIn->pinum] = CR.EOL; //update CR pointer to new iMap
 
 			//update EOL to point at very end of file
 			CR.EOL += sizeof(struct iMap);
 
 			pwrite(imageFD, &CR, sizeof(struct checkRegion), 0); //sync Mem CR with disk CR
-
-			fsync(imageFD);
+			fsync(imageFD);//push all to disk
 
 		}
 		else if(packIn->type == 0)//its a directory
 		{
-			newNode->stats.type = MFS_DIRECTORY;
-			newNode->stats.size = MFS_BLOCK_SIZE;
+			newNode->nodeStats.type = MFS_DIRECTORY;
+			newNode->nodeStats.size = MFS_BLOCK_SIZE;
 			//setup directory
 			struct dirBlock newDir;
 			dirInit(&newDir);
 
 			//inum is based off the first empty index into our 2D array
-			newDir.entries[0].inum = i*16 + j;//set . and ..
-			newDir.entries[1].inum = packIn->pinum;
+			newDir.dirEntry[0].inum = i*16 + j;//set . and ..
+			newDir.dirEntry[1].inum = packIn->pinum;
 
 			char nameIn[60];//assign self DIR and parent DIR
 			strcpy(nameIn, ".");
-			strcpy(newDir.entries[0].name, nameIn);
+			strcpy(newDir.dirEntry[0].name, nameIn);
 			strcpy(nameIn, "..");
-			strcpy(newDir.entries[1].name, nameIn);
+			strcpy(newDir.dirEntry[1].name, nameIn);
 
 			pwrite(imageFD, &newDir, MFS_BLOCK_SIZE, CR.EOL);
 
-			newNode->blocks[0] = CR.EOL;//set iNode pointer to this block
+			newNode->blockOffset[0] = CR.EOL;//set iNode pointer to this block
 			CR.EOL += MFS_BLOCK_SIZE;
 
 			//populate iNode
-			newNode->stats.type = MFS_DIRECTORY;//set type to directory entry
-			newNode->stats.size = MFS_BLOCK_SIZE ; // set size to default block size
+			newNode->nodeStats.type = MFS_DIRECTORY;//set type to directory entry
+			newNode->nodeStats.size = MFS_BLOCK_SIZE ; // set size to default block size
 
 			pwrite(imageFD, &newNode, sizeof(struct iNode), CR.EOL); //write iNode
 
-			CR.memMaps[i].nodes[j] = CR.EOL;//set iMap pointer
+			CR.memMaps[i].nodeOffset[j] = CR.EOL;//set iMap pointer
 			//map1.memNodes[0] = node1;//store node in mem structure
 			CR.EOL += sizeof(struct iNode);//advance past iNode
 
 			//write new map piece
 			pwrite(imageFD, &CR.memMaps[i], sizeof(struct iMap), CR.EOL);
 			//CR.memMaps[0] = map1;//store map in mem struct
-			CR.maps[i] = CR.EOL; //update CR pointer to new iMap
+			CR.mapOffset[i] = CR.EOL; //update CR pointer to new iMap
 
 			//update EOL to point at very end of file
 			CR.EOL += sizeof(struct iMap);
@@ -435,7 +465,7 @@ int server_creat(Package_t *packIn)
 
 
 
-	//packIn->result = 0;
+	packIn->result = 0;
 	return 0;
 }
 //int pinum, char *name
