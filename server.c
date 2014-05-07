@@ -9,6 +9,7 @@ int imageFD;
 struct sockaddr_in s;
 int sd;
 Package_t *buffer;
+int newInodeCount;
 
 int DEBUG = 0;
 /*
@@ -43,12 +44,29 @@ struct checkRegion //contains up to 256 pointers to iMap pieces
 	struct iMap memMaps[256];
 
 } CR;
-
 struct holderNode//used to hold 1 directory iNode and all its possible contents
 {
 	struct dirBlock memBlocks[14];
 	int offsets[14];
 }holder;
+
+//helper routines----------------------------------------------------
+void dirInit(struct dirBlock *newDir)
+{
+	int i;
+	for(i=0; i<64; i++)//initialize directory block
+	{
+		newDir->entries[i].inum = -1;
+	}
+}
+void blockInit(struct iNode *new)
+{
+	int i;
+	for(i=0; i<14; i++)//initialize directory block
+	{
+		new->blocks[i] = 0;
+	}
+}
 
 //routine to open server disk image, or create one if it doesnt exist
 //build CR or read it in off existing image.
@@ -71,23 +89,17 @@ int server_init(char *image)
 		//"Unused entries in the inode map and unused direct pointers
 		//in the inodes should have the value 0."
 		//unused directory entries have value -1
-		int i;
+		int i, j;
 		for(i=0; i<256; i++)//initalize CR
 		{
 			CR.maps[i] = sizeof(struct checkRegion) + i*sizeof(struct iMap);
+			for(j=0; j<16; j++)
+			{
+				CR.memMaps[i].nodes[j] = 0;
+			}
 		}
-		for(i=0; i<16; i++)//initialize first map piece
-		{
-			map1.nodes[i] = 0;
-		}
-		for(i=0; i<14; i++)//initialize inode
-		{
-			node1.blocks[i] = 0;
-		}
-		for(i=0; i<64; i++)//initialize directory block
-		{
-			dirBlock1.entries[i].inum = -1;
-		}
+		blockInit(&node1);
+		dirInit(&dirBlock1);
 
 		// | CR | M_all | D0 | I0 | M0 | EOL
 
@@ -124,12 +136,12 @@ int server_init(char *image)
 		pwrite(imageFD, &node1, sizeof(struct iNode), CR.EOL); //write iNode
 
 		map1.nodes[0] = CR.EOL;//set iMap pointer
-		map1.memNodes[0] = node1;//TODO store node in mem structure
+		map1.memNodes[0] = node1;//store node in mem structure
 		CR.EOL += sizeof(struct iNode);//advance past iNode
 
 		//write new map piece
 		pwrite(imageFD, &map1, sizeof(struct iMap), CR.EOL);
-		CR.memMaps[0] = map1;//TODO store map in mem struct
+		CR.memMaps[0] = map1;//store map in mem struct
 		CR.maps[0] = CR.EOL; //update CR pointer to new iMap
 
 		//update EOL to point at very end of file
@@ -161,18 +173,18 @@ int server_init(char *image)
 //int pinum, char *name
 int server_lookup(Package_t *packIn)
 {
-	if(packIn->pinum<0 || packIn->pinum > 4095)
+	if(packIn->pinum<0 || packIn->pinum > 4095)//check if its in range
 	{
 		packIn->result = -1;
 		return -1;
 	}
 	//lookup
-	struct iNode look = CR.memMaps[packIn->pinum/256].memNodes[packIn->pinum%16];
+	struct iNode look = CR.memMaps[packIn->pinum/16].memNodes[packIn->pinum%16];
 	int type = look.stats.type;
 	if(type == MFS_REGULAR_FILE)//if its a file
 	{
 		packIn->result = -1;
-		return -1;
+		return -2;
 	}
 	else if(type == MFS_DIRECTORY)//if its a directory
 	{
@@ -198,7 +210,7 @@ int server_lookup(Package_t *packIn)
 		packIn->result = -1;//the name was not found
 		return -1;
 	}
-	else
+	else//type not file or directory
 	{
 		packIn->result = -1;
 		return -1;
@@ -238,24 +250,101 @@ int server_creat(Package_t *packIn)
 	//name length check already done in MFS_lib
 	//printf("type %d \n", type);
 
-	if(packIn->pinum<0 || packIn->pinum>4095)
+	if(packIn->pinum<0 || packIn->pinum>4095)//check validity
 	{
 		return -1;
 	}
-
-	if(packIn->type == 1) //its a file
+	int parent = server_lookup(packIn);
+	if(parent > -1)//if files exists, we don't need to create it
 	{
-
+		packIn->result = 0;
+		return 0;
 	}
-	else if(packIn->type == 0)//its a directory
-	{
-
-	}
-	else//something is fucked!!!
+	else if(parent == -2)//pinum is a regular file, can not create IN a file(only in DIR)
 	{
 		packIn->result = -1;
 		return -1;
 	}
+	else if(parent == -1)//parent DIR exists, name does not
+	{
+		struct iNode *newNode;
+		blockInit(newNode);
+
+		//scan CR to find empty iNode
+		int i, j;
+		for(i=0; i<256; i++)
+		{
+			for(j=0; j<16; j++)
+			{
+				if(CR.memMaps[i].nodes[j] == 0)
+				{
+					newNode = &CR.memMaps[i].memNodes[j];
+				}
+			}
+		}
+		//create new based on type
+		if(packIn->type == 1) //its a file
+		{
+			newNode->stats.type = MFS_REGULAR_FILE;
+		}
+		else if(packIn->type == 0)//its a directory
+		{
+			newNode->stats.type = MFS_DIRECTORY;
+			//setup directory
+			struct dirBlock newDir;
+			dirInit(&newDir);
+
+			//inum is based off the first empty index into our 2D array
+			newDir.entries[0].inum = i*16 + j;//set . and ..
+			newDir.entries[1].inum = packIn->pinum;
+
+			char nameIn[60];//assign self DIR and parent DIR
+			strcpy(nameIn, ".");
+			strcpy(newDir.entries[0].name, nameIn);
+			strcpy(nameIn, "..");
+			strcpy(newDir.entries[1].name, nameIn);
+
+			pwrite(imageFD, &newDir, MFS_BLOCK_SIZE, CR.EOL);
+
+			newNode->blocks[0] = CR.EOL;//set iNode pointer to this block
+			CR.EOL += MFS_BLOCK_SIZE;
+
+			//populate iNode
+			newNode->stats.type = MFS_DIRECTORY;//set type to directory entry
+			newNode->stats.size = MFS_BLOCK_SIZE ; // set size to default block size
+
+			pwrite(imageFD, &newNode, sizeof(struct iNode), CR.EOL); //write iNode
+
+			CR.memMaps[i].nodes[j] = CR.EOL;//set iMap pointer
+			//map1.memNodes[0] = node1;//store node in mem structure
+			CR.EOL += sizeof(struct iNode);//advance past iNode
+
+			//write new map piece
+			pwrite(imageFD, &CR.memMaps[i], sizeof(struct iMap), CR.EOL);
+			//CR.memMaps[0] = map1;//store map in mem struct
+			CR.maps[i] = CR.EOL; //update CR pointer to new iMap
+
+			//update EOL to point at very end of file
+			CR.EOL += sizeof(struct iMap);
+
+			pwrite(imageFD, &CR, sizeof(struct checkRegion), 0); //sync Mem CR with disk CR
+
+			fsync(imageFD);
+		}
+		else//something is fucked!!!
+		{
+			printf("something is fucked in server_creat, DIR exists\n");
+			packIn->result = -1;
+			return -1;
+		}
+	}
+	else
+	{
+		printf("something is fucked in server_creat\n");
+	}
+
+
+
 
 	return 0;
 }
