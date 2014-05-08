@@ -107,8 +107,7 @@ int MFS_Stat(int inum, MFS_Stat_t *m)
 	MFS_Stat_t m2;
 
 	m2.type = statPackage.m.type;
-	if(statPackage.m.size == 8192) m2.size = statPackage.m.size + MFS_BLOCK_SIZE;
-	else m2.size = statPackage.m.size;
+	m2.size = statPackage.m.size;
 
 	printf("size: %d\n",m2.size);
 	printf("type: %d\n",m2.type);

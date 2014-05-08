@@ -329,15 +329,21 @@ int server_write(Package_t *packIn)
 		packIn->result = -1;
 		return -1;
 	}
-	if(thisNode->blockOffset[packIn->block] == 0)
-	{
-		thisNode->nodeStats.size += MFS_BLOCK_SIZE;
-	}
+
 
 
 	pwrite(imageFD, packIn->buffer, MFS_BLOCK_SIZE, CR.EOL);
 	CR.memMaps[packIn->inum/16].memNodes[packIn->inum%16].blockOffset[packIn->block] = CR.EOL;//point inMem parent iNode at new block
 	CR.EOL += MFS_BLOCK_SIZE;//point past written block
+
+	//Before iNode get written, we must update the size
+	int sizeCount = 13;
+	while(thisNode->blockOffset[sizeCount]== 0)
+	{
+		sizeCount--;
+	}
+	thisNode->nodeStats.size = MFS_BLOCK_SIZE * (sizeCount + 1);
+
 
 	pwrite(imageFD, &CR.memMaps[packIn->inum/16].memNodes[packIn->inum%16], sizeof(struct iNode), CR.EOL); //write iNode
 	CR.memMaps[packIn->inum/16].nodeOffset[packIn->inum%16] = CR.EOL;//set inMem iMap pointer to new node
