@@ -170,7 +170,7 @@ int MFS_Read(int inum, char *buffer, int block)
 	}
 
 	//Unload read data from server into buffer
-	strcpy(buffer, readPackage.buffer);
+	strncpy(buffer, readPackage.buffer, MFS_BLOCK_SIZE);
 	//*buffer = readPackage.buffer;
 	return readPackage.result;
 }
