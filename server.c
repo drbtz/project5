@@ -80,17 +80,26 @@ void mapInit(struct iMap *new)
 		new->nodeOffset[i] = 0;
 	}
 }
+int inumValidate(int inum)
+{
+	if(CR.memMaps[inum/16].nodeOffset[inum%16] == 0)
+	{
+		return -1;
+	}
+	return 0;
+}
+//-------------------------------------------------------------------
 
 //routine to open server disk image, or create one if it doesnt exist
 //build CR or read it in off existing image.
 int server_init(char *image)
 {
-	printf("size of dirBlock: %d\n", sizeof(struct dirBlock));
+	/*	printf("size of dirBlock: %d\n", sizeof(struct dirBlock));
 	printf("size of iNode: %d\n", sizeof(struct iNode));
 	printf("size of iMap: %d\n", sizeof(struct iMap));
 	printf("size of CR: %d\n", sizeof( CR));
 	printf("size of holderNode: %d\n", sizeof(struct holderNode));
-
+	 */
 	//try to open image
 	imageFD = open(image, O_RDWR);
 
@@ -203,8 +212,13 @@ int server_lookup(Package_t *packIn)
 		packIn->result = -1;
 		return -1;
 	}
+	if(inumValidate(packIn->pinum) == -1)
+	{
+		packIn->result = -1;
+		return -1;
+	}
 	//lookup
-	parentInode = &CR.memMaps[packIn->pinum/16].memNodes[packIn->pinum%16];//needs to be global for use in Creat
+	parentInode = &CR.memMaps[packIn->pinum/16].memNodes[packIn->pinum%16];
 	int type = parentInode->nodeStats.type;
 	if(type == MFS_REGULAR_FILE)//if its a file, can not lookup in a file
 	{
@@ -264,23 +278,108 @@ int server_lookup(Package_t *packIn)
 	return 0;
 }
 
+//returns some information about the file specified by inum. Upon success, return 0, otherwise -1.
+//The exact info returned is defined by MFS_Stat_t. Failure modes: inum does not exist.
 //int inum, MFS_Stat_t m
 int server_stat(Package_t *packIn)
 {
+	if(inumValidate(packIn->inum) == -1)
+	{
+		packIn->result = -1;
+		return -1;
+	}
+
+	struct iNode thisNode = CR.memMaps[packIn->inum/16].memNodes[packIn->inum%16];
+
+	packIn->m = thisNode.nodeStats;
+	//packIn->m.size = MFS_BLOCK_SIZE;
+	//packIn->m.type = MFS_REGULAR_FILE;
+
+	packIn->result = 0;
 	return 0;
 }
+
+//writes a block of size 4096 bytes at the block offset specified by block .
+//Returns 0 on success, -1 on failure. Failure modes: invalid inum, invalid block,
+//not a regular file (because you can't write to directories).
 //int inum, char *buffer, int block
 int server_write(Package_t *packIn)
 {
+	//error checks
+	//invalid iNum
+	if(packIn->inum <0 || packIn->inum >4095)
+	{
+		packIn->result = -1;
+		return -1;
+	}
+	if(inumValidate(packIn->inum) == -1)
+	{
+		packIn->result = -1;
+		return -1;
+	}
+	if(packIn->block <0 || packIn->block >13)
+	{
+		packIn->result = -1;
+		return -1;
+	}
+
+	struct iNode *thisNode = &CR.memMaps[packIn->inum/16].memNodes[packIn->inum%16];
+	if(thisNode->nodeStats.type == MFS_DIRECTORY)//not a file
+	{
+		packIn->result = -1;
+		return -1;
+	}
+	if(thisNode->blockOffset[packIn->block] == 0)
+	{
+		thisNode->nodeStats.size += MFS_BLOCK_SIZE;
+	}
+
+
+	pwrite(imageFD, packIn->buffer, MFS_BLOCK_SIZE, CR.EOL);
+	CR.memMaps[packIn->inum/16].memNodes[packIn->inum%16].blockOffset[packIn->block] = CR.EOL;//point inMem parent iNode at new block
+	CR.EOL += MFS_BLOCK_SIZE;//point past written block
+
+	pwrite(imageFD, &CR.memMaps[packIn->inum/16].memNodes[packIn->inum%16], sizeof(struct iNode), CR.EOL); //write iNode
+	CR.memMaps[packIn->inum/16].nodeOffset[packIn->inum%16] = CR.EOL;//set inMem iMap pointer to new node
+	CR.EOL += sizeof(struct iNode);//advance past iNode
+
+	pwrite(imageFD, &CR.memMaps[packIn->inum/16], sizeof(struct iMap), CR.EOL);
+	CR.mapOffset[packIn->inum/16] = CR.EOL; //update CR pointer to new iMap
+
+	//update EOL to point at very end of file
+	CR.EOL += sizeof(struct iMap);
+
+	pwrite(imageFD, &CR, sizeof(struct checkRegion), 0); //sync Mem CR with disk CR
+	fsync(imageFD);//push all to disk
+
+	packIn->result = 0;
 	return 0;
 }
-
+//reads a block specified by block into the buffer from file specified by inum .
+//The routine should work for either a file or directory; directories should return data
+//in the format specified by MFS_DirEnt_t.
+//Success: 0, failure: -1. Failure modes: invalid inum, invalid block.
 //int inum, char *buffer, int block
 int server_read(Package_t *packIn)
 {
+	if(inumValidate(packIn->inum) == -1)
+	{
+		packIn->result = -1;
+		return -1;
+	}
 
-	close(imageFD);
+	struct iNode thisNode = CR.memMaps[packIn->inum/16].memNodes[packIn->inum%16];
 
+	if(thisNode.blockOffset[packIn->block] == 0)
+	{
+		packIn->result = -1;
+		return -1;
+	}
+
+	pread(imageFD, packIn->buffer, MFS_BLOCK_SIZE, thisNode.blockOffset[packIn->block]);
+
+
+	packIn->result = 0;
 	return 0;
 }
 //MFS_Creat() makes a file ( type == MFS_REGULAR_FILE) or directory ( type == MFS_DIRECTORY)
@@ -296,6 +395,12 @@ int server_creat(Package_t *packIn)
 
 	if(packIn->pinum<0 || packIn->pinum>4095)//check validity
 	{
+		packIn->result = -1;
+		return -1;
+	}
+	if(inumValidate(packIn->pinum) == -1)
+	{
+		packIn->result = -1;
 		return -1;
 	}
 
@@ -497,9 +602,62 @@ int server_creat(Package_t *packIn)
 	packIn->result = 0;
 	return 0;
 }
+
+//removes the file or directory name from the directory specified by pinum .
+//0 on success, -1 on failure. Failure modes: pinum does not exist,
+//directory is NOT empty. Note that the name not existing is NOT a failure by our definition
 //int pinum, char *name
 int server_unlink(Package_t *packIn)
 {
+	if(inumValidate(packIn->pinum) == -1)
+	{
+		packIn->result = -1;
+		return -1;
+	}
+	int unlinkInum = server_lookup(packIn);
+
+	//find name in DIR and zeros it out(marks it for reuse)
+	int i, j, eye, jay;
+	for(i=0; i<14; i++)
+	{
+		for(j=0; j<64; j++)
+		{
+			//clear name and iNum
+			if(strcmp(inMemoryDataBlock.memBlocks[i].dirEntry[j].name, packIn->name) == 0)
+			{
+				bzero(inMemoryDataBlock.memBlocks[i].dirEntry[j].name, sizeof(inMemoryDataBlock.memBlocks[i].dirEntry[j].name));
+				inMemoryDataBlock.memBlocks[i].dirEntry[j].inum = -1;
+				eye = i;
+				jay = j;
+				i=14;
+				j=64;
+			}
+		}
+	}
+	i = eye;
+	j = jay;
+
+	CR.memMaps[unlinkInum/16].nodeOffset[unlinkInum%16] = 0;
+
+	//update parent D I M
+	pwrite(imageFD, &inMemoryDataBlock.memBlocks[i], sizeof(struct dirBlock), CR.EOL);//write updated DIR block
+	parentInode->blockOffset[i] = CR.EOL;//point inMem parent iNode at new block
+	CR.EOL += MFS_BLOCK_SIZE;//point past written block
+
+	pwrite(imageFD, &parentInode, sizeof(struct iNode), CR.EOL); //write iNode
+	CR.memMaps[packIn->pinum/16].nodeOffset[packIn->pinum%16] = CR.EOL;//set inMem iMap pointer to new node
+	CR.EOL += sizeof(struct iNode);//advance past iNode
+
+	pwrite(imageFD, &CR.memMaps[packIn->pinum/16], sizeof(struct iMap), CR.EOL);
+	CR.mapOffset[packIn->pinum] = CR.EOL; //update CR pointer to new iMap
+
+	//update EOL to point at very end of file
+	CR.EOL += sizeof(struct iMap);
+
+	pwrite(imageFD, &CR, sizeof(struct checkRegion), 0); //sync Mem CR with disk CR
+	fsync(imageFD);
+
+	packIn->result = 0;
 	return 0;
 }
 
@@ -613,6 +771,22 @@ main(int argc, char *argv[])
 
 		server_lookup(buffer);
 
+
+		buffer->requestType = WRITE_REQUEST;
+		buffer->inum = 1;
+		buffer->block = 0;
+		server_write(buffer);
+
+		buffer->requestType = READ_REQUEST;
+		buffer->inum = 1;
+		buffer->block = 0;
+		server_read(buffer);
+
+		printf("buff %s", buffer->buffer);
+
+		buffer->inum = 1;
+		server_stat(buffer);
+
 	}
 
 	if(!DEBUG)
@@ -627,9 +801,9 @@ main(int argc, char *argv[])
 			{
 				unpack(buffer);//helper method to decode package_t and call proper server method
 
-				printf("                                SERVER:: read %d bytes (message: '%s')\n", rc, buffer->name);
+				//printf("                                SERVER:: read %d bytes (message: '%s')\n", rc, buffer->name);
 				//Package_t reply;
-				strcpy(buffer->name, "Reply");
+				//strcpy(buffer->name, "Reply");
 				rc = UDP_Write(sd, &s, buffer, sizeof(Package_t));
 			}
 		}
