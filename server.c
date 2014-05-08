@@ -12,7 +12,7 @@ Package_t *buffer;
 int newInodeCount;
 struct iNode *parentInode; //used in creat, when we make a new file we have to update parent iNode and map
 
-int DEBUG = 0;
+int DEBUG = 1;
 /*
 iNode contents: size, type(file or dir), 14 "pointers"(int offsets)
 iMap contents: ID 0-255, 16 pointers to iNodes
@@ -52,7 +52,6 @@ struct checkRegion //contains up to 256 pointers to iMap pieces
 struct holderNode//used to hold 1 directory iNode and all its possible contents
 {
 	struct dirBlock memBlocks[14];
-	//int offsets[14];
 }inMemoryDataBlock;
 
 //helper routines----------------------------------------------------
@@ -105,7 +104,7 @@ int server_init(char *image)
 
 	if(imageFD < 0)//does not exist
 	{	//create new image
-		imageFD = open(image, O_RDWR| O_CREAT| O_TRUNC, S_IRWXU);
+		imageFD = open(image, O_RDWR| O_CREAT, S_IRWXU);
 
 		//setup checkpoint region**************************************
 
@@ -273,7 +272,6 @@ int server_lookup(Package_t *packIn)
 		packIn->result = -1;
 		return -1;
 	}
-
 	//check if node is a directory
 	return 0;
 }
@@ -615,6 +613,38 @@ int server_unlink(Package_t *packIn)
 		return -1;
 	}
 	int unlinkInum = server_lookup(packIn);
+	if(unlinkInum < 0)
+	{
+		packIn->result = 0;
+		return 0;
+	}
+
+	//here we have to check if the DIR is empty.  Run lookup on this iNode and scan for entries in Mem block
+	int heldPinum = packIn->pinum;
+	packIn->pinum = unlinkInum;
+	int dirEmptyCheck = server_lookup(packIn); //just need to run to populate memBlock
+	if(dirEmptyCheck > 0)//scan through the DIR to look for entries, if found, return error
+	{
+		int i, j;
+		for(i=0; i<14; i++)
+		{
+			for(j=0; j<64; j++)
+			{
+				if(inMemoryDataBlock.memBlocks[i].dirEntry[j].inum != -1)
+				{
+					packIn->pinum = heldPinum;
+					server_lookup(packIn);
+
+					packIn->result = -1;
+					return -1;
+				}
+			}
+		}
+	}
+	//else reset values and continue
+	packIn->pinum = heldPinum;
+	unlinkInum = server_lookup(packIn);
+
 
 	//find name in DIR and zeros it out(marks it for reuse)
 	int i, j, eye, jay;
@@ -748,11 +778,8 @@ main(int argc, char *argv[])
 		buffer->requestType = 0;        //int Request being sent to server(read, write, etc)
 		buffer->result = 0;             //int The result of the inode(file or directory)
 		buffer->type = 1;               //int The type of the request sent to server
+		//MFS_Stat_t test;                //MFS_Stat_t Used by MFS_Stat for formatting
 
-		MFS_Stat_t test;                //MFS_Stat_t Used by MFS_Stat for formatting
-		test.size = 0;                  //size of file, %block size for directories, otherwise offset to last non-zero byte in data
-		test.type = 0;                  // 0 = directory, 1 = file
-		buffer->m = test;
 
 		server_creat(buffer);
 
@@ -763,13 +790,17 @@ main(int argc, char *argv[])
 		buffer->pinum = 0; 			    //int  The parent inode number
 		buffer->requestType = 0;		//int Request being sent to server(read, write, etc)
 		buffer->result = 0; 			//int The result of the request sent to server
-		buffer->type = 0; 				//int The type of the inode(file or directory)
+		buffer->type = 1; 				//int The type of the inode(file or directory)
 
-		test.size = 0;					//size of file, %block size for directories, otherwise offset to last non-zero byte in data
-		test.type = 0;					// 0 = directory, 1 = file
-		buffer->m = test;
+		server_creat(buffer);
 
-		server_lookup(buffer);
+		buffer->pinum = 1;
+		buffer->type = 0;
+		strcpy(buffer->name, "unlinkME");   // char[] The file name
+
+		server_creat(buffer);
+
+		//server_lookup(buffer);
 
 
 		buffer->requestType = WRITE_REQUEST;
@@ -777,12 +808,18 @@ main(int argc, char *argv[])
 		buffer->block = 0;
 		server_write(buffer);
 
-		buffer->requestType = READ_REQUEST;
+
+		server_write(buffer);
+
+/*		buffer->requestType = READ_REQUEST;
 		buffer->inum = 1;
 		buffer->block = 0;
 		server_read(buffer);
+*/
 
-		printf("buff %s", buffer->buffer);
+		buffer->requestType =UNLINK_REQUEST;
+		buffer->pinum = 0;
+		server_unlink(buffer);
 
 		buffer->inum = 1;
 		server_stat(buffer);
