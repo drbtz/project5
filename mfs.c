@@ -124,11 +124,16 @@ int MFS_Write(int inum, char *buffer, int block)
 	//create package and fill it with data(buffer, inum, block, request type)
 	Package_t writePackage;
 	memcpy(writePackage.buffer, buffer, MFS_BLOCK_SIZE);
-	printf("write buffer length: %zu\n",sizeof(writePackage.buffer));
+	//printf("write buffer length: %zu\n",sizeof(writePackage.buffer));
 	writePackage.inum = 1;
 	writePackage.block = block;
 	writePackage.requestType = WRITE_REQUEST;
 	writePackage.result = 31337;
+
+	if(block > 13)
+	{
+		return -1;
+	}
 
 	//Send package to the server
 	int rc = UDP_Write(sd, &saddr, &writePackage, sizeof(Package_t));
@@ -158,6 +163,12 @@ int MFS_Read(int inum, char *buffer, int block)
 	readPackage.requestType = READ_REQUEST;
 	readPackage.result = 31337;
 
+	if(block > 13)
+	{
+		return -1;
+	}
+
+
 	//send package to the server
 	int rc = UDP_Write(sd, &saddr, &readPackage, sizeof(Package_t));
 	if (rc <= 0) return -1;
@@ -173,7 +184,7 @@ int MFS_Read(int inum, char *buffer, int block)
 	{//if fail, return fail
 		return -1;
 	}
-	printf("read buffer length: %zu\n",sizeof(readPackage.buffer));
+	//printf("read buffer length: %zu\n",sizeof(readPackage.buffer));
 	//Unload read data from server into buffer
 	memcpy(buffer, (void *)readPackage.buffer, MFS_BLOCK_SIZE);
 	//*buffer = readPackage.buffer;
@@ -266,14 +277,14 @@ int MFS_Shutdown()
 	shutdownPackage.result = 31337;
 
 	//send package to the server
-		int rc = UDP_Write(sd, &saddr, &shutdownPackage, sizeof(Package_t));
-		if (rc <= 0) return -1;
+	int rc = UDP_Write(sd, &saddr, &shutdownPackage, sizeof(Package_t));
+	if (rc <= 0) return -1;
 
-		//Wait for a package from the server(5 second timeout)
-		if (select(FD_SETSIZE, &sockets, NULL, NULL, &timeout)) {
-			int rc = UDP_Read(sd, &raddr, &shutdownPackage, sizeof(Package_t));
-			printf("CLIENT:: read %d bytes (message: '%s')\n", rc, shutdownPackage.buffer);
-		}
-		printf("%d\n", shutdownPackage.result);
-		return shutdownPackage.result;
+	//Wait for a package from the server(5 second timeout)
+	if (select(FD_SETSIZE, &sockets, NULL, NULL, &timeout)) {
+		int rc = UDP_Read(sd, &raddr, &shutdownPackage, sizeof(Package_t));
+		printf("CLIENT:: read %d bytes (message: '%s')\n", rc, shutdownPackage.buffer);
+	}
+	printf("%d\n", shutdownPackage.result);
+	return shutdownPackage.result;
 }
