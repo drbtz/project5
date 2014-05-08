@@ -104,9 +104,13 @@ int MFS_Stat(int inum, MFS_Stat_t *m)
 	{//if fail, return fail
 		return -1;
 	}
+	MFS_Stat_t m2;
+
+	m2.type = statPackage.m.size;
+	m2.size = statPackage.m.type;
 
 	//Unload stat data from package into m
-	*m = statPackage.m;
+	*m = m2;
 	return 0;
 }
 
@@ -119,7 +123,8 @@ int MFS_Write(int inum, char *buffer, int block)
 {
 	//create package and fill it with data(buffer, inum, block, request type)
 	Package_t writePackage;
-	strncpy(writePackage.buffer, buffer, MFS_BLOCK_SIZE);
+	memcpy(writePackage.buffer, buffer, MFS_BLOCK_SIZE);
+	printf("write buffer length: %zu\n",sizeof(writePackage.buffer));
 	writePackage.inum = 1;
 	writePackage.block = block;
 	writePackage.requestType = WRITE_REQUEST;
@@ -159,8 +164,8 @@ int MFS_Read(int inum, char *buffer, int block)
 
 	//Wait for a package from the server(5 second timeout)
 	if (select(FD_SETSIZE, &sockets, NULL, NULL, &timeout)) {
-		int rc = UDP_Read(sd, &raddr, &readPackage, sizeof(Package_t));
-		printf("CLIENT:: read %d bytes (message: '%s')\n", rc, readPackage.buffer);
+		UDP_Read(sd, &raddr, &readPackage, sizeof(Package_t));
+		//printf("CLIENT:: read %d bytes (message: '%s')\n", rc, readPackage.buffer);
 	}
 
 	//check the result of the package
@@ -168,9 +173,9 @@ int MFS_Read(int inum, char *buffer, int block)
 	{//if fail, return fail
 		return -1;
 	}
-
+	printf("read buffer length: %zu\n",sizeof(readPackage.buffer));
 	//Unload read data from server into buffer
-	strncpy(buffer, readPackage.buffer, MFS_BLOCK_SIZE);
+	memcpy(buffer, (void *)readPackage.buffer, MFS_BLOCK_SIZE);
 	//*buffer = readPackage.buffer;
 	return readPackage.result;
 }
