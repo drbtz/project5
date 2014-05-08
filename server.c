@@ -666,7 +666,7 @@ int server_shutdown()
 	fsync(imageFD);
 	close(imageFD);
 	buffer->result = 0;
-	UDP_Write(sd, &s, buffer, sizeof(Package_t));
+	UDP_Write(sd, &s, (char*)buffer, sizeof(Package_t));
 	exit(0);
 	return 0;
 }
@@ -791,11 +791,11 @@ main(int argc, char *argv[])
 
 	if(!DEBUG)
 	{
-		printf("                                SERVER:: waiting in loop\n");
+		//printf("                                SERVER:: waiting in loop\n");
 
 		while (1) {
 
-			int rc = UDP_Read(sd, &s, buffer, sizeof(Package_t));
+			int rc = UDP_Read(sd, &s, (char*)buffer, sizeof(Package_t));
 
 			if (rc > 0)
 			{
@@ -804,7 +804,7 @@ main(int argc, char *argv[])
 				//printf("                                SERVER:: read %d bytes (message: '%s')\n", rc, buffer->name);
 				//Package_t reply;
 				//strcpy(buffer->name, "Reply");
-				rc = UDP_Write(sd, &s, buffer, sizeof(Package_t));
+				rc = UDP_Write(sd, &s, (char*)buffer, sizeof(Package_t));
 			}
 		}
 	}
