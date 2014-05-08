@@ -28,7 +28,7 @@ struct dirBlock//block of directory entries
 };
 struct iNode
 {
-	//size of file, miltiple of 4096 for directories. for files, offset of last non-zero byte
+	//size of file, multiple of 4096 for directories. for files, offset of last non-zero byte
 	//stats.type = f11e(1) or direct0ry(0)
 	MFS_Stat_t nodeStats;
 	//int size;
@@ -154,8 +154,12 @@ int server_init(char *image)
 		char nameIn[60];
 		strcpy(nameIn, ".");
 		strcpy(dirBlock1.dirEntry[0].name, nameIn);
+		dirBlock1.dirEntry[0].inum = 0;
+
+
 		strcpy(nameIn, "..");
 		strcpy(dirBlock1.dirEntry[1].name, nameIn);
+		dirBlock1.dirEntry[1].inum = 0;
 
 		pwrite(imageFD, &dirBlock1, MFS_BLOCK_SIZE, CR.EOL);
 
@@ -186,14 +190,56 @@ int server_init(char *image)
 	}
 	else //image exists, read in CR to memory
 	{
+		//fill CR with data
+		pread(imageFD, &CR, sizeof(struct checkRegion), 0);
 
-		pread(imageFD, &CR.EOL, sizeof(int), 0);//read in value of EOL
-		int i;
-		for(i=0; i<256; i++)//read map pieces into
-		{
-			pread(imageFD, &CR.mapOffset[i], sizeof(int)+sizeof(struct iMap), (i+1) * (sizeof(int)+sizeof(struct iMap)));
-			//printf("bytes read %d at offset %d \n ", check, i+1 * sizeof(int));
-		}
+		//for each map piece
+//		int i;
+//		for(i = 0; i < 256; i++)
+//		{
+//			//read in each map from its offset into file
+//			pread(imageFD, &CR.memMaps[i], sizeof(struct iMap), CR.mapOffset[i]);
+//
+//			//for each iNode in the map
+//			int j;
+//			for(j = 0; j < 16; j++)
+//			{
+//				//If the offset is not 0, then there is a node to load into mem
+//				if(CR.memMaps[i].nodeOffset[j] != 0)
+//				{
+//					pread(imageFD, &CR.memMaps[i].memNodes[j], sizeof(struct iNode), CR.memMaps[i].nodeOffset[j]);
+//				}
+//			}
+//		}
+
+		//read in EOL from file
+//		pread(imageFD, &CR.EOL, sizeof(int), 0);
+//
+//		//assemble the in memory file system
+//		//maybe not this hard
+//		int i;
+//		for(i=0; i<256; i++)//
+//		{
+//			//read in map piece offset into memory
+//			pread(imageFD, &CR.mapOffset[i], sizeof(int), (i+1) * (sizeof(int)));
+//
+//			//if the offset is not zero, then there is a map at the offset to read in
+//			//this SHOULD be moot, because the whole map is created during init
+//			if(CR.mapOffset[i])
+//			{
+//				pread(imageFD, &CR.memMaps[i], sizeof(iMap), CR.mapOffset[i]);
+//				int j;
+//
+//				//for each iNode in the map
+//				for(j = 0; j < 16; j++)
+//				{
+//					//read each node offset into iMap
+//					pread(imageFD, &CR.memMaps[i].nodeOffset[j], sizeof(int), CR.mapOffset[i]);
+//
+//				}
+//			}
+//			//printf("bytes read %d at offset %d \n ", check, i+1 * sizeof(int));
+//		}
 	}
 	fsync(imageFD);
 	//close(imageFD);
@@ -746,21 +792,22 @@ main(int argc, char *argv[])
 
 	if(DEBUG)
 	{
-		buffer->block = 0;              //int The block of the inode
-		strcpy(buffer->buffer, "pants");//char[] buffer for read request from client
-		buffer->inum = 0;               //int The inode number
-		strcpy(buffer->name, "test");  // char[] The file name
-		buffer->pinum = 0;              //int  The parent inode number
-		buffer->requestType = 0;        //int Request being sent to server(read, write, etc)
-		buffer->result = 0;             //int The result of the inode(file or directory)
-		buffer->type = 1;               //int The type of the request sent to server
-
 		MFS_Stat_t test;                //MFS_Stat_t Used by MFS_Stat for formatting
-		test.size = 0;                  //size of file, %block size for directories, otherwise offset to last non-zero byte in data
-		test.type = 0;                  // 0 = directory, 1 = file
-		buffer->m = test;
-
-		server_creat(buffer);
+//		buffer->block = 0;              //int The block of the inode
+//		strcpy(buffer->buffer, "pants");//char[] buffer for read request from client
+//		buffer->inum = 0;               //int The inode number
+//		strcpy(buffer->name, "test");  // char[] The file name
+//		buffer->pinum = 0;              //int  The parent inode number
+//		buffer->requestType = 0;        //int Request being sent to server(read, write, etc)
+//		buffer->result = 0;             //int The result of the inode(file or directory)
+//		buffer->type = 1;               //int The type of the request sent to server
+//
+//
+//		test.size = 0;                  //size of file, %block size for directories, otherwise offset to last non-zero byte in data
+//		test.type = 0;                  // 0 = directory, 1 = file
+//		buffer->m = test;
+//
+//		server_creat(buffer);
 
 		buffer->block = 0; 			    //int The block of the inode
 		strcpy(buffer->buffer, "pants");//char[] buffer for read request from client
@@ -776,22 +823,24 @@ main(int argc, char *argv[])
 		buffer->m = test;
 
 		server_lookup(buffer);
+//
+//
+//		buffer->requestType = WRITE_REQUEST;
+//		buffer->inum = 1;
+//		buffer->block = 0;
+//		server_write(buffer);
 
 
-		buffer->requestType = WRITE_REQUEST;
-		buffer->inum = 1;
-		buffer->block = 0;
-		server_write(buffer);
-
-		buffer->requestType = READ_REQUEST;
-		buffer->inum = 1;
-		buffer->block = 0;
-		server_read(buffer);
-
-		printf("buff %s", buffer->buffer);
-
-		buffer->inum = 1;
-		server_stat(buffer);
+//
+//		buffer->requestType = READ_REQUEST;
+//		buffer->inum = 1;
+//		buffer->block = 0;
+//		server_read(buffer);
+//
+//		printf("buff %s", buffer->buffer);
+//
+//		buffer->inum = 1;
+//		server_stat(buffer);
 
 	}
 
