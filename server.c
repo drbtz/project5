@@ -12,7 +12,7 @@ Package_t *buffer;
 int newInodeCount;
 struct iNode *parentInode; //used in creat, when we make a new file we have to update parent iNode and map
 
-int DEBUG = 1;
+int DEBUG = 0;
 /*
 iNode contents: size, type(file or dir), 14 "pointers"(int offsets)
 iMap contents: ID 0-255, 16 pointers to iNodes
@@ -28,7 +28,7 @@ struct dirBlock//block of directory entries
 };
 struct iNode
 {
-	//size of file, miltiple of 4096 for directories. for files, offset of last non-zero byte
+	//size of file, multiple of 4096 for directories. for files, offset of last non-zero byte
 	//stats.type = f11e(1) or direct0ry(0)
 	MFS_Stat_t nodeStats;
 	//int size;
@@ -52,6 +52,7 @@ struct checkRegion //contains up to 256 pointers to iMap pieces
 struct holderNode//used to hold 1 directory iNode and all its possible contents
 {
 	struct dirBlock memBlocks[14];
+	//int offsets[14];
 }inMemoryDataBlock;
 
 //helper routines----------------------------------------------------
@@ -61,6 +62,8 @@ void dirInit(struct dirBlock *newDir)
 	for(i=0; i<64; i++)//initialize directory block
 	{
 		newDir->dirEntry[i].inum = -1;
+		memset(newDir->dirEntry[i].name, 0, 60);
+
 	}
 }
 void nodeInit(struct iNode *new)
@@ -87,6 +90,28 @@ int inumValidate(int inum)
 	}
 	return 0;
 }
+//scans the parent directory before creat to ensure there is space for the file
+int creatValidate()
+{
+	if(parentInode->nodeStats.size > (895 * (int)sizeof(MFS_DirEnt_t)))
+	{
+		return -1;
+	}
+
+	//	int i, j;
+	//	for(i=0; i<14; i++)
+	//	{
+	//		for(j=0; j<64; j++)
+	//		{
+	//			if(inMemoryDataBlock.memBlocks[i].dirEntry[j].inum == -1)
+	//			{
+	//				return 0; //if it finds a space, we can return success
+	//			}
+	//		}
+	//	}
+	//no spaces, return failure before creating anything
+	return 0;
+}
 //-------------------------------------------------------------------
 
 //routine to open server disk image, or create one if it doesnt exist
@@ -104,7 +129,7 @@ int server_init(char *image)
 
 	if(imageFD < 0)//does not exist
 	{	//create new image
-		imageFD = open(image, O_RDWR| O_CREAT, S_IRWXU);
+		imageFD = open(image, O_RDWR| O_CREAT| O_TRUNC, S_IRWXU);
 
 		//setup checkpoint region**************************************
 
@@ -147,14 +172,16 @@ int server_init(char *image)
 			CR.EOL += sizeof(struct iMap);
 		}
 		//populate and write directory block
-		dirBlock1.dirEntry[0].inum = 0;//set . and .. , parent is same as current for root
-		dirBlock1.dirEntry[1].inum = 0;
 
 		char nameIn[60];
 		strcpy(nameIn, ".");
 		strcpy(dirBlock1.dirEntry[0].name, nameIn);
+		dirBlock1.dirEntry[0].inum = 0;
+
+
 		strcpy(nameIn, "..");
 		strcpy(dirBlock1.dirEntry[1].name, nameIn);
+		dirBlock1.dirEntry[1].inum = 0;
 
 		pwrite(imageFD, &dirBlock1, MFS_BLOCK_SIZE, CR.EOL);
 
@@ -163,7 +190,7 @@ int server_init(char *image)
 
 		//populate iNode
 		node1.nodeStats.type = MFS_DIRECTORY;//set type to directory entry
-		node1.nodeStats.size = MFS_BLOCK_SIZE ; // set size to default block size
+		node1.nodeStats.size = 2 * sizeof(MFS_DirEnt_t); // size is 2 entries
 
 		pwrite(imageFD, &node1, sizeof(struct iNode), CR.EOL); //write iNode
 
@@ -185,14 +212,56 @@ int server_init(char *image)
 	}
 	else //image exists, read in CR to memory
 	{
+		//fill CR with data
+		pread(imageFD, &CR, sizeof(struct checkRegion), 0);
 
-		pread(imageFD, &CR.EOL, sizeof(int), 0);//read in value of EOL
-		int i;
-		for(i=0; i<256; i++)//read map pieces into
-		{
-			pread(imageFD, &CR.mapOffset[i], sizeof(int)+sizeof(struct iMap), (i+1) * (sizeof(int)+sizeof(struct iMap)));
-			//printf("bytes read %d at offset %d \n ", check, i+1 * sizeof(int));
-		}
+		//for each map piece
+		//		int i;
+		//		for(i = 0; i < 256; i++)
+		//		{
+		//			//read in each map from its offset into file
+		//			pread(imageFD, &CR.memMaps[i], sizeof(struct iMap), CR.mapOffset[i]);
+		//
+		//			//for each iNode in the map
+		//			int j;
+		//			for(j = 0; j < 16; j++)
+		//			{
+		//				//If the offset is not 0, then there is a node to load into mem
+		//				if(CR.memMaps[i].nodeOffset[j] != 0)
+		//				{
+		//					pread(imageFD, &CR.memMaps[i].memNodes[j], sizeof(struct iNode), CR.memMaps[i].nodeOffset[j]);
+		//				}
+		//			}
+		//		}
+
+		//read in EOL from file
+		//		pread(imageFD, &CR.EOL, sizeof(int), 0);
+		//
+		//		//assemble the in memory file system
+		//		//maybe not this hard
+		//		int i;
+		//		for(i=0; i<256; i++)//
+		//		{
+		//			//read in map piece offset into memory
+		//			pread(imageFD, &CR.mapOffset[i], sizeof(int), (i+1) * (sizeof(int)));
+		//
+		//			//if the offset is not zero, then there is a map at the offset to read in
+		//			//this SHOULD be moot, because the whole map is created during init
+		//			if(CR.mapOffset[i])
+		//			{
+		//				pread(imageFD, &CR.memMaps[i], sizeof(iMap), CR.mapOffset[i]);
+		//				int j;
+		//
+		//				//for each iNode in the map
+		//				for(j = 0; j < 16; j++)
+		//				{
+		//					//read each node offset into iMap
+		//					pread(imageFD, &CR.memMaps[i].nodeOffset[j], sizeof(int), CR.mapOffset[i]);
+		//
+		//				}
+		//			}
+		//			//printf("bytes read %d at offset %d \n ", check, i+1 * sizeof(int));
+		//		}
 	}
 	fsync(imageFD);
 	//close(imageFD);
@@ -208,11 +277,13 @@ int server_lookup(Package_t *packIn)
 	//error check
 	if(packIn->pinum<0 || packIn->pinum > 4095)//check if its in range
 	{
+		printf("failed in lookup1 check");
 		packIn->result = -1;
 		return -1;
 	}
 	if(inumValidate(packIn->pinum) == -1)
 	{
+		printf("failed in lookup2 check\n");
 		packIn->result = -1;
 		return -1;
 	}
@@ -221,35 +292,17 @@ int server_lookup(Package_t *packIn)
 	int type = parentInode->nodeStats.type;
 	if(type == MFS_REGULAR_FILE)//if its a file, can not lookup in a file
 	{
+		printf("failed in lookup3 check\n");
 		packIn->result = -1;
 		return -2;
 	}
 	else if(type == MFS_DIRECTORY)//if its a directory
 	{
 		int i, j;
-
-		//lookup 1: look.blocks[0] = 558084
-		//lookup 2: look.blocks[0] =
-
-		/*
-		 * issue:  holder contains the correct data after 1st look up.  Creat, makes the file correctly
-		 * but either fails to save it properly(offset pointer) or, the 2nd lookup is reading the wrong place.
-		 * correct data exists in holder, but is overwritten on 2nd lookup.
-		 *
-		 * try clearing contents of holder after write to disk and then tracking where 2nd lookup reads from
-		 * it should be the same location as creat saved
-		 */
-
-
 		for(i=0; i<14; i++)
 		{
-			//TODO after creat, the new name "test", should be found in here.  It is reading in a block of all 0s
-
 			//read whole parent directory iNode into memory (possibly 14 blocks of 64 directories)
 			pread(imageFD, &inMemoryDataBlock.memBlocks[i], sizeof(struct dirBlock), parentInode->blockOffset[i]);
-
-
-
 		}
 		//scan over all possible valid entries in this iNode(now in memory)
 		for(i=0; i<14; i++)
@@ -264,14 +317,17 @@ int server_lookup(Package_t *packIn)
 				}
 			}
 		}
+		//printf("failed in lookup4 check\n");
 		packIn->result = -1;//the name was not found
 		return -1;
 	}
 	else//type not file or directory
 	{
+		printf("failed in lookup5 check\n");
 		packIn->result = -1;
 		return -1;
 	}
+
 	//check if node is a directory
 	return 0;
 }
@@ -327,15 +383,21 @@ int server_write(Package_t *packIn)
 		packIn->result = -1;
 		return -1;
 	}
-	if(thisNode->blockOffset[packIn->block] == 0)
-	{
-		thisNode->nodeStats.size += MFS_BLOCK_SIZE;
-	}
+
 
 
 	pwrite(imageFD, packIn->buffer, MFS_BLOCK_SIZE, CR.EOL);
 	CR.memMaps[packIn->inum/16].memNodes[packIn->inum%16].blockOffset[packIn->block] = CR.EOL;//point inMem parent iNode at new block
 	CR.EOL += MFS_BLOCK_SIZE;//point past written block
+
+	//Before iNode get written, we must update the size
+	int sizeCount = 13;
+	while(thisNode->blockOffset[sizeCount]== 0)
+	{
+		sizeCount--;
+	}
+	thisNode->nodeStats.size = MFS_BLOCK_SIZE * (sizeCount + 1);
+
 
 	pwrite(imageFD, &CR.memMaps[packIn->inum/16].memNodes[packIn->inum%16], sizeof(struct iNode), CR.EOL); //write iNode
 	CR.memMaps[packIn->inum/16].nodeOffset[packIn->inum%16] = CR.EOL;//set inMem iMap pointer to new node
@@ -388,16 +450,16 @@ int server_read(Package_t *packIn)
 //int pinum, int type, char *name
 int server_creat(Package_t *packIn)
 {
-	//name length check already done in MFS_lib
-	//printf("type %d \n", type);
-
+	//error checks, name length is already handled in MFS client
 	if(packIn->pinum<0 || packIn->pinum>4095)//check validity
 	{
+		printf("failed in valid check\n");
 		packIn->result = -1;
 		return -1;
 	}
 	if(inumValidate(packIn->pinum) == -1)
 	{
+		printf("failed in iNum check\n");
 		packIn->result = -1;
 		return -1;
 	}
@@ -405,16 +467,27 @@ int server_creat(Package_t *packIn)
 	int parent = server_lookup(packIn);
 	if(parent > -1)//if files exists, we don't need to create it
 	{
+		printf("failed in lookup check\n");
 		packIn->result = 0;
 		return 0;
 	}
 	else if(parent == -2)//pinum is a regular file, can not create IN a file(only in DIR)
 	{
+		printf("failed in file check\n");
 		packIn->result = -1;
 		return -1;
 	}
 	else if(parent == -1)//parent DIR exists, name(file or DIR) does not
 	{
+		//validate that the new file can fit in DIR
+		int validDir = creatValidate();
+		if(validDir == -1)
+		{
+			printf("failed in fit check\n");
+			packIn->result = -1;
+			return -1;
+		}
+
 		struct iNode *newNode;//new node for new file
 		newNode = malloc(sizeof(struct iNode));
 		nodeInit(newNode);
@@ -441,24 +514,33 @@ int server_creat(Package_t *packIn)
 		j = jay;
 		nodeInit(newNode);
 		//create new based on type
-		if(packIn->type == 1) //its a file
+		if(packIn->type == 1) //we are creating a new FILE
 		{
 			//files have no initial size, just an iNode
 			newNode->nodeStats.type = MFS_REGULAR_FILE;
 			newNode->nodeStats.size = 0;
 
 			//here we find a space in the current directory
-			//scan over each block and each entry to find first empty one
+			//TODO if DIR block is full, we must bring a new one online.
 			int a, b, a2, b2;
-			for(a=0; a<14; a++)
+			a=0;
+
+			if(parentInode->nodeStats.size % 4096 == 0)
 			{
-				for(b=0; b<64; b++)//TODO error check on values
+				//find location of new block
+				a = parentInode->nodeStats.size/4096;
+				dirInit(&inMemoryDataBlock.memBlocks[a]);//init the next DIR block
+			}
+			for(a=0; a<16; a++)
+			{
+				for(b=0; b<64; b++)
 				{
 					if(inMemoryDataBlock.memBlocks[a].dirEntry[b].inum == -1)
 					{
 						//update info for new directory entry
 						strcpy(inMemoryDataBlock.memBlocks[a].dirEntry[b].name, packIn->name);//set name in holder
 						inMemoryDataBlock.memBlocks[a].dirEntry[b].inum = i*16 + j;           //set iNode in holder
+						parentInode->nodeStats.size += sizeof(MFS_DirEnt_t);
 
 						//write new file to EOL (no data since it is empty file)
 						pwrite(imageFD, &newNode, sizeof(struct iNode), CR.EOL); //write iNode
@@ -471,18 +553,16 @@ int server_creat(Package_t *packIn)
 						CR.mapOffset[i] = CR.EOL; //update CR pointer to new iMap
 						//update EOL to point at very end of file
 						CR.EOL += sizeof(struct iMap);
+
 						a2=a;
 						b2=b;
-
+						b=64;
+						a=16;
 						break;
 					}
 				}
-			}//here we need a catch for when the DIR is completely full?
-			if(a==14 && b==64)
-			{
-				//TODO DIR is full, do something. Error or over flow to new DIR block??
 			}
-			a=a2;//this is the DIR block
+			a=a2;
 			b=b2;//this is the DIR entry
 
 
@@ -495,7 +575,7 @@ int server_creat(Package_t *packIn)
 			CR.EOL += sizeof(struct iNode);//advance past iNode
 
 			pwrite(imageFD, &CR.memMaps[packIn->pinum/16], sizeof(struct iMap), CR.EOL);
-			CR.mapOffset[packIn->pinum] = CR.EOL; //update CR pointer to new iMap
+			CR.mapOffset[packIn->pinum/16] = CR.EOL; //update CR pointer to new iMap
 
 			//update EOL to point at very end of file
 			CR.EOL += sizeof(struct iMap);
@@ -504,10 +584,18 @@ int server_creat(Package_t *packIn)
 			fsync(imageFD);//push all to disk
 
 		}
-		else if(packIn->type == 0)//its a directory
+		else if(packIn->type == 0)//we are creating a new directory
 		{
+			//validate that the new file can fit in DIR
+			int validDir = creatValidate();
+			if(validDir == -1)
+			{
+				printf("failed in valid dir check\n");
+				packIn->result = -1;
+				return -1;
+			}
 			newNode->nodeStats.type = MFS_DIRECTORY;
-			newNode->nodeStats.size = MFS_BLOCK_SIZE;
+			newNode->nodeStats.size = sizeof(MFS_DirEnt_t) * 2;
 			//setup directory
 			struct dirBlock newDir;
 			dirInit(&newDir);
@@ -527,7 +615,7 @@ int server_creat(Package_t *packIn)
 			CR.EOL += sizeof(struct dirBlock);
 			//populate iNode
 			newNode->nodeStats.type = MFS_DIRECTORY;//set type to directory entry
-			newNode->nodeStats.size = sizeof(struct dirBlock) ; // set size to default block size
+			newNode->nodeStats.size = sizeof(MFS_DirEnt_t) * 2; // set size to default block size
 			pwrite(imageFD, &newNode, sizeof(struct iNode), CR.EOL); //write iNode
 			//populate map
 			CR.memMaps[i].nodeOffset[j] = CR.EOL;//set iMap pointer
@@ -540,27 +628,40 @@ int server_creat(Package_t *packIn)
 
 
 			///////////////////////////////////////////////////////////////////////////
+
+
 			int a, b, a2, b2;
-			for(a=0; a<14; a++)
+			a=0;
+
+			//TODO If DIR block is full, we need to bring a new one online
+			if(parentInode->nodeStats.size % 4096 == 0)
 			{
-				for(b=0; b<64; b++)//TODO error check on values
+				//find location of new block
+				a = parentInode->nodeStats.size/4096;
+				dirInit(&inMemoryDataBlock.memBlocks[a]);//init the next DIR block
+			}
+
+			for(a=0; a<16; a++)
+			{
+
+				for(b=0; b<64; b++)
 				{
 					if(inMemoryDataBlock.memBlocks[a].dirEntry[b].inum == -1)
 					{
 						//update info for new directory entry
 						strcpy(inMemoryDataBlock.memBlocks[a].dirEntry[b].name, packIn->name);//set name in holder
 						inMemoryDataBlock.memBlocks[a].dirEntry[b].inum = i*16 + j;           //set iNode in holder
+						parentInode->nodeStats.size += sizeof(MFS_DirEnt_t);
+
 						a2=a;
 						b2=b;
+						a=16;
+						b=64;
 						break;
 					}
 				}
-			}//here we need a catch for when the DIR is completely full?
-			if(a==14 && b==64)
-			{
-				//TODO DIR is full, do something. Error or over flow to new DIR block??
 			}
-			a=a2;//this is the DIR block
+			a=a2;
 			b=b2;//this is the DIR entry
 
 			//update parent D I M
@@ -613,38 +714,6 @@ int server_unlink(Package_t *packIn)
 		return -1;
 	}
 	int unlinkInum = server_lookup(packIn);
-	if(unlinkInum < 0)
-	{
-		packIn->result = 0;
-		return 0;
-	}
-
-	//here we have to check if the DIR is empty.  Run lookup on this iNode and scan for entries in Mem block
-	int heldPinum = packIn->pinum;
-	packIn->pinum = unlinkInum;
-	int dirEmptyCheck = server_lookup(packIn); //just need to run to populate memBlock
-	if(dirEmptyCheck > 0)//scan through the DIR to look for entries, if found, return error
-	{
-		int i, j;
-		for(i=0; i<14; i++)
-		{
-			for(j=0; j<64; j++)
-			{
-				if(inMemoryDataBlock.memBlocks[i].dirEntry[j].inum != -1)
-				{
-					packIn->pinum = heldPinum;
-					server_lookup(packIn);
-
-					packIn->result = -1;
-					return -1;
-				}
-			}
-		}
-	}
-	//else reset values and continue
-	packIn->pinum = heldPinum;
-	unlinkInum = server_lookup(packIn);
-
 
 	//find name in DIR and zeros it out(marks it for reuse)
 	int i, j, eye, jay;
@@ -770,18 +839,48 @@ main(int argc, char *argv[])
 
 	if(DEBUG)
 	{
+
+		MFS_Stat_t test;                //MFS_Stat_t Used by MFS_Stat for formatting
 		buffer->block = 0;              //int The block of the inode
 		strcpy(buffer->buffer, "pants");//char[] buffer for read request from client
 		buffer->inum = 0;               //int The inode number
 		strcpy(buffer->name, "test");  // char[] The file name
 		buffer->pinum = 0;              //int  The parent inode number
-		buffer->requestType = 0;        //int Request being sent to server(read, write, etc)
-		buffer->result = 0;             //int The result of the inode(file or directory)
-		buffer->type = 1;               //int The type of the request sent to server
-		//MFS_Stat_t test;                //MFS_Stat_t Used by MFS_Stat for formatting
+		buffer->requestType = CREAT_REQUEST;        //int Request being sent to server(read, write, etc)
+		buffer->result = 3;             //int The result of the inode(file or directory)
+		buffer->type = 0;               //int creating a fi1e(1) or DIR (0)
 
 
 		server_creat(buffer);
+
+		//		server_creat(buffer);
+		//		strcpy(buffer->name, "test1");
+		//		server_creat(buffer);
+		//		strcpy(buffer->name, "test2");
+		//		server_creat(buffer);
+		//		strcpy(buffer->name, "test3");
+		//		server_creat(buffer);
+		//		strcpy(buffer->name, "test4");
+		//		server_creat(buffer);
+		//		strcpy(buffer->name, "test5");
+		//		server_creat(buffer);
+
+		buffer->pinum = 1;
+		buffer->type = 1;
+
+		int z;
+		for(z=0; z<896; z++)
+		{
+			printf("z = %d", z);
+			sprintf(buffer->name, "test%d" ,z + 2);
+			server_creat(buffer);
+			if(z == 64 || z == 128)
+			{
+				z= 65;
+				printf("64\n");
+			}
+		}
+
 
 		buffer->block = 0; 			    //int The block of the inode
 		strcpy(buffer->buffer, "pants");//char[] buffer for read request from client
@@ -790,17 +889,13 @@ main(int argc, char *argv[])
 		buffer->pinum = 0; 			    //int  The parent inode number
 		buffer->requestType = 0;		//int Request being sent to server(read, write, etc)
 		buffer->result = 0; 			//int The result of the request sent to server
-		buffer->type = 1; 				//int The type of the inode(file or directory)
+		buffer->type = 0; 				//int The type of the inode(file or directory)
 
-		server_creat(buffer);
+		test.size = 0;					//size of file, %block size for directories, otherwise offset to last non-zero byte in data
+		test.type = 0;					// 0 = directory, 1 = file
+		buffer->m = test;
 
-		buffer->pinum = 1;
-		buffer->type = 0;
-		strcpy(buffer->name, "unlinkME");   // char[] The file name
-
-		server_creat(buffer);
-
-		//server_lookup(buffer);
+		server_lookup(buffer);
 
 
 		buffer->requestType = WRITE_REQUEST;
@@ -809,22 +904,19 @@ main(int argc, char *argv[])
 		server_write(buffer);
 
 
-		server_write(buffer);
 
-/*		buffer->requestType = READ_REQUEST;
+		buffer->requestType = READ_REQUEST;
 		buffer->inum = 1;
 		buffer->block = 0;
 		server_read(buffer);
-*/
 
-		buffer->requestType =UNLINK_REQUEST;
-		buffer->pinum = 0;
-		server_unlink(buffer);
+		printf("buff %s", buffer->buffer);
 
 		buffer->inum = 1;
 		server_stat(buffer);
 
 	}
+
 
 	if(!DEBUG)
 	{
@@ -833,6 +925,7 @@ main(int argc, char *argv[])
 		while (1) {
 
 			int rc = UDP_Read(sd, &s, (char*)buffer, sizeof(Package_t));
+			//printf("READ FROM \n");
 
 			if (rc > 0)
 			{
@@ -841,11 +934,12 @@ main(int argc, char *argv[])
 				//printf("                                SERVER:: read %d bytes (message: '%s')\n", rc, buffer->name);
 				//Package_t reply;
 				//strcpy(buffer->name, "Reply");
+
 				rc = UDP_Write(sd, &s, (char*)buffer, sizeof(Package_t));
+
+
 			}
 		}
 	}
 	return 0;
 }
-
-
