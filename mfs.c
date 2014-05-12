@@ -44,6 +44,7 @@ int MFS_Init(char *hostname, int port)
  */
 int MFS_Lookup(int pinum, char *name)
 {
+	//printf("entering lookup\n");
 	//Check the name?
 	int nameLength = strlen(name);
 	if(nameLength > 60)
@@ -72,6 +73,7 @@ int MFS_Lookup(int pinum, char *name)
 	}
 
 	//return the result
+	//printf("leaving lookup %d \n", lookupPackage.result);
 	return lookupPackage.result;
 }
 
@@ -82,6 +84,7 @@ int MFS_Lookup(int pinum, char *name)
  */
 int MFS_Stat(int inum, MFS_Stat_t *m)
 {
+	//printf("entering stat\n");
 	//Create a package and fill it
 	Package_t statPackage;
 	statPackage.inum = inum;
@@ -127,11 +130,12 @@ int MFS_Stat(int inum, MFS_Stat_t *m)
  */
 int MFS_Write(int inum, char *buffer, int block)
 {
+	//printf("entering write\n");
 	//create package and fill it with data(buffer, inum, block, request type)
 	Package_t writePackage;
 	memcpy(writePackage.buffer, buffer, MFS_BLOCK_SIZE);
 	//printf("write buffer length: %zu\n",sizeof(writePackage.buffer));
-	writePackage.inum = 1;
+	writePackage.inum = inum;
 	writePackage.block = block;
 	writePackage.requestType = WRITE_REQUEST;
 	writePackage.result = 31337;
@@ -150,7 +154,12 @@ int MFS_Write(int inum, char *buffer, int block)
 		UDP_Read(sd, &raddr,(char*) &writePackage, sizeof(Package_t));
 		//printf("CLIENT:: read %d bytes (message: '%s')\n", rc, writePackage.buffer);
 	}
-
+//
+//	printf("leaving write %d \n", writePackage.result);
+//	printf("write pinum %d \n", writePackage.pinum);
+//	printf("write inum %d \n", writePackage.inum);
+//	printf("write block %d \n", writePackage.block);
+//	printf("write type %d \n", writePackage.type);
 	return writePackage.result;
 }
 
@@ -162,6 +171,7 @@ int MFS_Write(int inum, char *buffer, int block)
  */
 int MFS_Read(int inum, char *buffer, int block)
 {
+	//printf("entering read\n");
 	//create a package and fill it
 	Package_t readPackage;
 	readPackage.inum = inum;
@@ -194,6 +204,7 @@ int MFS_Read(int inum, char *buffer, int block)
 	//Unload read data from server into buffer
 	memcpy(buffer, (void *)readPackage.buffer, MFS_BLOCK_SIZE);
 	//*buffer = readPackage.buffer;
+	//printf("leaving read %d \n", readPackage.result);
 	return readPackage.result;
 }
 
@@ -206,6 +217,7 @@ int MFS_Read(int inum, char *buffer, int block)
  */
 int MFS_Creat(int pinum, int type, char *name)
 {
+	//printf("entering create \n");
 	//check the name
 	int nameLength = strlen(name);
 	if(nameLength > 60)
@@ -231,7 +243,7 @@ int MFS_Creat(int pinum, int type, char *name)
 		//printf("CLIENT:: read %d bytes (message: '%s')\n", rc, creatPackage.buffer);
 	}
 
-
+	//printf("leaving creat %d \n", creatPackage.result);
 	return creatPackage.result;
 }
 
@@ -267,6 +279,7 @@ int MFS_Unlink(int pinum, char *name)
 		//printf("CLIENT:: read %d bytes (message: '%s')\n", rc, unlinkPackage.buffer);
 	}
 
+	//printf("leaving unlink %d \n", unlinkPackage.result);
 	return unlinkPackage.result;
 }
 
