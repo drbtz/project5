@@ -279,13 +279,13 @@ int server_lookup(Package_t *packIn)
 	//error check
 	if(packIn->pinum<0 || packIn->pinum > 4095)//check if its in range
 	{
-		printf("failed in lookup1 check");
+		//printf("failed in lookup1 check");
 		packIn->result = -1;
 		return -1;
 	}
 	if(inumValidate(packIn->pinum) == -1)
 	{
-		printf("failed in lookup2 check\n");
+		//printf("failed in lookup2 check\n");
 		packIn->result = -1;
 		return -1;
 	}
@@ -294,7 +294,7 @@ int server_lookup(Package_t *packIn)
 	int type = parentInode->nodeStats.type;
 	if(type == MFS_REGULAR_FILE)//if its a file, can not lookup in a file
 	{
-		printf("failed in lookup3 check\n");
+		//printf("failed in lookup3 check\n");
 		packIn->result = -1;
 		return -2;
 	}
@@ -325,7 +325,7 @@ int server_lookup(Package_t *packIn)
 	}
 	else//type not file or directory
 	{
-		printf("failed in lookup5 check\n");
+		//printf("failed in lookup5 check\n");
 		packIn->result = -1;
 		return -1;
 	}
@@ -455,13 +455,13 @@ int server_creat(Package_t *packIn)
 	//error checks, name length is already handled in MFS client
 	if(packIn->pinum<0 || packIn->pinum>4095)//check validity
 	{
-		printf("failed in valid check\n");
+		//printf("failed in valid check\n");
 		packIn->result = -1;
 		return -1;
 	}
 	if(inumValidate(packIn->pinum) == -1)
 	{
-		printf("failed in iNum check\n");
+		//printf("failed in iNum check\n");
 		packIn->result = -1;
 		return -1;
 	}
@@ -469,13 +469,13 @@ int server_creat(Package_t *packIn)
 	int parent = server_lookup(packIn);
 	if(parent > -1)//if files exists, we don't need to create it
 	{
-		printf("failed in lookup check\n");
+		//printf("failed in lookup check\n");
 		packIn->result = 0;
 		return 0;
 	}
 	else if(parent == -2)//pinum is a regular file, can not create IN a file(only in DIR)
 	{
-		printf("failed in file check\n");
+		//printf("failed in file check\n");
 		packIn->result = -1;
 		return -1;
 	}
@@ -485,7 +485,7 @@ int server_creat(Package_t *packIn)
 		int validDir = creatValidate();
 		if(validDir == -1)
 		{
-			printf("failed in fit check\n");
+			//printf("failed in fit check\n");
 			packIn->result = -1;
 			return -1;
 		}
@@ -715,7 +715,28 @@ int server_unlink(Package_t *packIn)
 		packIn->result = -1;
 		return -1;
 	}
+
 	int unlinkInum = server_lookup(packIn);
+	int holdPinum = packIn->pinum;
+	char holdName[60];
+	memcpy(holdName, packIn->name, 60);
+	packIn->pinum = unlinkInum;
+	server_lookup(packIn);
+
+
+	//TODO CHECK SIZE HERE
+	if(parentInode->nodeStats.size > 128)
+	{
+		packIn->result = -1;
+		return -1;
+	}
+
+
+	//reset and continue
+	packIn->pinum = holdPinum;
+	memcpy(packIn->name, holdName, 60);
+	unlinkInum = server_lookup(packIn);
+
 
 	//find name in DIR and zeros it out(marks it for reuse)
 	int i, j, eye, jay;
@@ -728,6 +749,7 @@ int server_unlink(Package_t *packIn)
 			{
 				bzero(inMemoryDataBlock.memBlocks[i].dirEntry[j].name, sizeof(inMemoryDataBlock.memBlocks[i].dirEntry[j].name));
 				inMemoryDataBlock.memBlocks[i].dirEntry[j].inum = -1;
+				parentInode->nodeStats.size -= sizeof(MFS_DirEnt_t);
 				eye = i;
 				jay = j;
 				i=14;
