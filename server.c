@@ -216,6 +216,7 @@ int server_init(char *image)
 		pread(imageFD, &CR, sizeof(struct checkRegion), 0);
 
 		//for each map piece
+
 		//		int i;
 		//		for(i = 0; i < 256; i++)
 		//		{
@@ -262,6 +263,7 @@ int server_init(char *image)
 		//			}
 		//			//printf("bytes read %d at offset %d \n ", check, i+1 * sizeof(int));
 		//		}
+
 	}
 	fsync(imageFD);
 	//close(imageFD);
@@ -840,6 +842,7 @@ main(int argc, char *argv[])
 	if(DEBUG)
 	{
 
+
 		MFS_Stat_t test;                //MFS_Stat_t Used by MFS_Stat for formatting
 		buffer->block = 0;              //int The block of the inode
 		strcpy(buffer->buffer, "pants");//char[] buffer for read request from client
@@ -852,6 +855,7 @@ main(int argc, char *argv[])
 
 
 		server_creat(buffer);
+
 
 		//		server_creat(buffer);
 		//		strcpy(buffer->name, "test1");
@@ -898,6 +902,7 @@ main(int argc, char *argv[])
 		server_lookup(buffer);
 
 
+
 		buffer->requestType = WRITE_REQUEST;
 		buffer->inum = 1;
 		buffer->block = 0;
@@ -915,6 +920,7 @@ main(int argc, char *argv[])
 		buffer->inum = 1;
 		server_stat(buffer);
 
+
 	}
 
 
@@ -925,7 +931,7 @@ main(int argc, char *argv[])
 		while (1) {
 
 			int rc = UDP_Read(sd, &s, (char*)buffer, sizeof(Package_t));
-			//printf("READ FROM \n");
+
 
 			if (rc > 0)
 			{
@@ -935,7 +941,9 @@ main(int argc, char *argv[])
 				//Package_t reply;
 				//strcpy(buffer->name, "Reply");
 
+
 				rc = UDP_Write(sd, &s, (char*)buffer, sizeof(Package_t));
+
 
 
 			}

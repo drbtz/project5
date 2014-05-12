@@ -64,7 +64,7 @@ int MFS_Lookup(int pinum, char *name)
 	int rc = UDP_Write(sd, &saddr,(char*)&lookupPackage, sizeof(Package_t));
 	if (rc <= 0) return -1;
 
-	printf("before select.\n");
+	//printf("before select.\n");
 	//Wait for a response from the server(5 second timeout)
 	if (select(FD_SETSIZE, &sockets, NULL, NULL, &timeout)) {
 		UDP_Read(sd, &raddr, (char*)&lookupPackage, sizeof(Package_t));
@@ -107,8 +107,10 @@ int MFS_Stat(int inum, MFS_Stat_t *m)
 	MFS_Stat_t m2;
 
 	m2.type = statPackage.m.type;
+
 	if(statPackage.m.size == 8192) m2.size = statPackage.m.size + MFS_BLOCK_SIZE;
 	else m2.size = statPackage.m.size;
+
 
 	printf("size: %d\n",m2.size);
 	printf("type: %d\n",m2.type);
