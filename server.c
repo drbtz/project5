@@ -533,7 +533,7 @@ int server_creat(Package_t *packIn)
 				a = parentInode->nodeStats.size/4096;
 				dirInit(&inMemoryDataBlock.memBlocks[a]);//init the next DIR block
 			}
-			for(a=0; a<16; a++)
+			for(a=0; a<14; a++)
 			{
 				for(b=0; b<64; b++)
 				{
@@ -643,7 +643,7 @@ int server_creat(Package_t *packIn)
 				dirInit(&inMemoryDataBlock.memBlocks[a]);//init the next DIR block
 			}
 
-			for(a=0; a<16; a++)
+			for(a=0; a<14; a++)
 			{
 
 				for(b=0; b<64; b++)
@@ -657,7 +657,7 @@ int server_creat(Package_t *packIn)
 
 						a2=a;
 						b2=b;
-						a=16;
+						a=14;
 						b=64;
 						break;
 					}

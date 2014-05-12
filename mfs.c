@@ -29,7 +29,7 @@ int MFS_Init(char *hostname, int port)
 	FD_SET(sd, &sockets);
 
 	//set up timeval for select
-	timeout.tv_sec = 5;
+	timeout.tv_sec = 200;
 	timeout.tv_usec = 0;
 
 
